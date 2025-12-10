@@ -1,0 +1,12 @@
+# Archivos de Node.js
+/node_modules
+npm-debug.log
+
+# Archivos de Firebase/Credenciales
+serviceAccountKey.json
+
+# Variables de entorno
+.env
+
+# Logs de Render u otros
+*.log
