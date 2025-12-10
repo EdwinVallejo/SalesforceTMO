@@ -13,12 +13,14 @@ try {
     }
     const serviceAccount = JSON.parse(serviceAccountJson);
     
+    // ...
     // Inicializa la aplicación Firebase
     admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        // Reemplaza <TU-ID> con el ID real de tu proyecto Firebase
-        databaseURL: `https://${serviceAccount.project_id}.firebaseio.com` 
+    credential: admin.credential.cert(serviceAccount),
+     // ¡CORRECCIÓN! Usamos la URL completa y verificada.
+    databaseURL: "https://salesforcetmo-default-rtdb.firebaseio.com" 
     });
+    // ...
     
     console.log("Firebase inicializado exitosamente.");
 } catch (e) {
