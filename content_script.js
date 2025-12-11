@@ -93,6 +93,30 @@ async function createBlocking(clientId, userName, team) {
         } else {
             statusContainer.innerHTML = `<div style="color:red;">Error ${response ? response.status : 'N/A'} al crear bloqueo.</div>`;
         }
+        if (response.status === 200) {
+            // Caso 1: Cliente BLOQUEADO (El servidor encontró un registro)
+            const bloqueo = response.data;
+            // ... (código para mostrar el mensaje rojo, el botón Liberar, etc.)
+
+        } else if (response.status === 404) {
+            // Caso 2: Cliente LIBRE (El servidor NO encontró un registro, que es el 404 esperado)
+            statusContainer.style.backgroundColor = '#e6ffe6'; // Verde claro
+            statusContainer.style.borderLeft = '4px solid #4CAF50';
+            
+            statusContainer.innerHTML = `
+                <div style="color: #38761d; padding: 5px;">
+                    ✅ **Cliente Libre.**
+                    <button onclick="pedirBloqueo('${clientId}', '${userName}')" 
+                        style="margin-top: 8px; background-color: #4CAF50; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
+                        Bloquear para Pruebas
+                    </button>
+                </div>
+            `;
+
+        } else {
+            // Caso 3: Error desconocido (500, 400, etc.)
+            statusContainer.innerHTML = `<div style="color: red; padding: 5px;">Error ${response.status} desconocido.</div>`;
+        }
 
     } catch (e) {
         alert("Error de comunicación con el Service Worker (POST).");
@@ -133,27 +157,20 @@ async function checkBlockingStatus(clientId, userName) {
     statusContainer.style.backgroundColor = '#f0f0f0';
 
     try {
-        // Llama al Service Worker para hacer el GET
         const response = await chrome.runtime.sendMessage({
             action: "API_FETCH",
             method: 'GET',
             url: clientId, 
         });
-        
-        // Manejo de errores del Service Worker
-        if (!response || !response.ok) {
-             statusContainer.innerHTML = `<div style="color: red;">⚠️ Error ${response.status} al contactar la API de Render.</div>`;
-             return;
-        }
 
         if (response.status === 200) {
-            // Cliente BLOQUEADO
+            // Caso 1: CLIENTE BLOQUEADO (Éxito)
             const bloqueo = response.data;
             const expirationTime = new Date(bloqueo.tiempo_expiracion).toLocaleTimeString();
             
-            statusContainer.style.backgroundColor = '#ffeaea'; // Rojo claro
+            // Lógica de visualización para BLOQUEADO (Rojo)
+            statusContainer.style.backgroundColor = '#ffeaea'; 
             statusContainer.style.borderLeft = '4px solid #f75d59';
-
             statusContainer.innerHTML = `
                 <div style="color: #cc0000; padding: 5px;">
                     🚨 **CLIENTE EN USO POR PRUEBAS**
@@ -169,8 +186,8 @@ async function checkBlockingStatus(clientId, userName) {
             `;
 
         } else if (response.status === 404) {
-            // Cliente LIBRE
-            statusContainer.style.backgroundColor = '#e6ffe6'; // Verde claro
+            // Caso 2: CLIENTE LIBRE (Éxito, no encontrado en BD)
+            statusContainer.style.backgroundColor = '#e6ffe6'; 
             statusContainer.style.borderLeft = '4px solid #4CAF50';
             
             statusContainer.innerHTML = `
@@ -184,12 +201,13 @@ async function checkBlockingStatus(clientId, userName) {
             `;
 
         } else {
-            statusContainer.innerHTML = `<div style="color: red; padding: 5px;">Error ${response.status} desconocido.</div>`;
+            // Caso 3: Error Real (500, 400, etc.)
+            statusContainer.innerHTML = `<div style="color: red; padding: 5px;">Error ${response.status} desconocido. Revise la API.</div>`;
         }
 
     } catch (error) {
         console.error("Fallo la comunicación con el Service Worker:", error);
-        statusContainer.innerHTML = `<div style="color: orange; padding: 5px;">⚠️ Error: Imposible comunicarse con la extensión.</div>`;
+        statusContainer.innerHTML = `<div style="color: orange; padding: 5px;">⚠️ Error de comunicación de extensión.</div>`;
     }
 }
 
