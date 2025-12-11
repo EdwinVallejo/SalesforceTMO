@@ -1,31 +1,31 @@
 {
     "manifest_version": 3,
-    "name": "Bloqueo de Pruebas Salesforce",
+    "name": "Salesforce TMO Blocker",
     "version": "1.0",
-    "description": "Muestra si un cliente de Salesforce está en uso por un equipo de pruebas.",
+    "description": "Bloquea cuentas de Salesforce para indicar uso.",
+    
     "permissions": [
+        "storage",
         "activeTab",
-        "scripting",
-        "storage"
+        "scripting" 
     ],
+    
     "host_permissions": [
         "https://*.salesforce.com/*",
         "https://salesforcetmo.onrender.com/*" 
     ],
-    "action": {
-        "default_popup": "popup.html",
-        "default_icon": {
-            "16": "icons/icon16.png",
-            "48": "icons/icon48.png"
-        }
-    },
     "content_scripts": [
         {
-            "matches": [
-                "https://*.salesforce.com/lightning/r/Account/*",
-                "https://*.salesforce.com/lightning/r/Contact/*"
-            ],
+            "matches": ["https://clarosfi--uat.sandbox.lightning.force.com/lightning/r/Account/*"],
             "js": ["content_script.js"]
         }
-    ]
+    ],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    
+    
+    "background": { 
+        "service_worker": "background.js"
+    }
 }
