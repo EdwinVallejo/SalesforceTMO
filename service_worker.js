@@ -5,8 +5,9 @@
 // =============================================================
 
 // Define la URL base de la API de bloqueo de clientes
-// IMPORTANTE: Se ELIMINA la barra inclinada final (/) para que el POST funcione en la ruta raíz.
-const API_BASE_URL = "https://salesforcetmo.onrender.com/bloqueo_clientes";
+// IMPORTANTE: Se ha añadido el prefijo '/api/v1' por si el backend de Render lo está usando.
+// La nueva URL de colección para POST será: https://salesforcetmo.onrender.com/api/v1/bloqueo_clientes
+const API_BASE_URL = "https://salesforcetmo.onrender.com/api/v1/bloqueo_clientes";
 
 /**
  * Función genérica para manejar las peticiones a la API.
@@ -19,8 +20,8 @@ const API_BASE_URL = "https://salesforcetmo.onrender.com/bloqueo_clientes";
  */
 async function fetchWithRetry(url, method, data = null, retries = 3) {
     // La URL completa ahora se construye dinámicamente:
-    // POST (url === 'base'): https://.../bloqueo_clientes (SIN barra final)
-    // GET/DELETE (url === 'ID'): https://.../bloqueo_clientes/ID (SE AÑADE la barra)
+    // POST (url === 'base'): https://.../api/v1/bloqueo_clientes (SIN barra final)
+    // GET/DELETE (url === 'ID'): https://.../api/v1/bloqueo_clientes/ID (SE AÑADE la barra)
     const fullUrl = url === 'base' ? API_BASE_URL : `${API_BASE_URL}/${url}`;
 
     // ************************************************
