@@ -1,318 +1,628 @@
 // =============================================================
 // CONTENT_SCRIPT.JS
-// Ejecutado en la página de Salesforce.
+// Inyecta la interfaz de usuario en Salesforce, incluyendo un modal
+// para la captura de datos de bloqueo (Usuario, Equipo, Días),
+// y guarda los últimos datos usados en chrome.storage.local.
 // =============================================================
-console.log("Blocking Ext: 1. Script de contenido cargado."); // Debug 1: Indica que el navegador ha inyectado y está leyendo el script
 
-// --- Funciones de Utilidad y Globales (Accesibles desde el HTML Inyectado) ---
+// --- 1. Constantes y Configuración ---
 
+const UI_CONTAINER_ID = 'blocking-ext-ui-container';
+const MODAL_ID = 'blocking-ext-modal';
+const API_ACTION = "API_FETCH";
+const LAST_BLOCK_DATA_KEY = 'lastBlockData'; // Clave para chrome.storage
+
+// Valores por defecto iniciales (se sobrescribirán con el almacenamiento)
+let USER_DATA = {
+    usuario_nombre: "Agente Canvas", 
+    equipo: "TMO" 
+};
+let DEFAULT_BLOCK_DAYS = 20; // Bloqueo por defecto de 20 días
+
+// --- 2. Funciones de Ayuda y Comunicación ---
+
+/**
+ * Obtiene el ID del cliente (Account ID) de la URL actual.
+ */
 function getClientIdFromUrl() {
-    const matches = window.location.pathname.match(/\/lightning\/r\/Account\/([a-zA-Z0-9]{15,18})/);
-    return matches ? matches[1] : null;
-}
-
-function getUserNameFromSession() {
-    const userMenu = document.querySelector('button[title="User"]');
-    if (userMenu) {
-        const ariaLabel = userMenu.getAttribute('aria-label');
-        if (ariaLabel && ariaLabel.includes('User menu for')) {
-            return ariaLabel.replace('User menu for ', '').trim();
-        }
+    const url = window.location.href;
+    const match = url.match(/\/Account\/([a-zA-Z0-9]+)\/view/);
+    if (match && match[1]) {
+        console.log(`Blocking Ext: ID Cliente encontrado: ${match[1]}`);
+        return match[1];
     }
-    return "Usuario Desconocido"; 
+    console.log("Blocking Ext: No se encontró Account ID en la URL.");
+    return null;
 }
 
-// Inyección forzada en el body con posición fija
-function injectStatusContainer() {
-    let container = document.getElementById('blocking-status-container');
+/**
+ * Envía un mensaje al Service Worker para realizar una llamada a la API.
+ */
+function sendMessageToServiceWorker(urlSegment, method, data = null) {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+            action: API_ACTION,
+            url: urlSegment,
+            method: method,
+            data: data
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error("Error de comunicación con Service Worker: " + chrome.runtime.lastError.message));
+                return;
+            }
+            resolve(response);
+        });
+    });
+}
+
+// --- 3. Gestión de Almacenamiento Local (chrome.storage) ---
+
+/**
+ * Carga los últimos datos guardados del almacenamiento local.
+ */
+async function loadSavedData() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(LAST_BLOCK_DATA_KEY, (result) => {
+            const savedData = result[LAST_BLOCK_DATA_KEY];
+            if (savedData) {
+                console.log("Blocking Ext: Datos guardados cargados.", savedData);
+                USER_DATA.usuario_nombre = savedData.usuario_nombre || USER_DATA.usuario_nombre;
+                USER_DATA.equipo = savedData.equipo || USER_DATA.equipo;
+                DEFAULT_BLOCK_DAYS = savedData.blockDays || DEFAULT_BLOCK_DAYS;
+            } else {
+                console.log("Blocking Ext: No hay datos guardados previamente.");
+            }
+            resolve();
+        });
+    });
+}
+
+/**
+ * Guarda la última información de bloqueo utilizada.
+ */
+function saveLastBlockData(usuario_nombre, equipo, blockDays) {
+    const dataToSave = {
+        usuario_nombre: usuario_nombre,
+        equipo: equipo,
+        blockDays: blockDays
+    };
+    chrome.storage.local.set({ [LAST_BLOCK_DATA_KEY]: dataToSave }, () => {
+        if (chrome.runtime.lastError) {
+            console.error("Error al guardar datos en chrome.storage:", chrome.runtime.lastError);
+        } else {
+            console.log("Blocking Ext: Datos de bloqueo guardados exitosamente.");
+        }
+    });
+}
+
+
+// --- 4. Componentes de UI (Inputs y Contenedor) ---
+
+/**
+ * Crea un input con estilo de formulario limpio: Label a la izquierda, valor a la derecha.
+ */
+function createStyledInput(id, placeholder, defaultValue, type = 'text') {
+    const div = document.createElement('div');
+    div.style.display = 'flex'; 
+    div.style.alignItems = 'center';
+    div.style.marginBottom = '12px'; 
+    div.style.border = '1px solid #ccc';
+    div.style.borderRadius = '5px';
+    div.style.backgroundColor = '#f9f9f9'; 
+
+    // Etiqueta (Label)
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = placeholder + ':';
+    labelSpan.style.padding = '8px 10px';
+    labelSpan.style.fontSize = '12px';
+    labelSpan.style.color = '#555';
+    labelSpan.style.fontWeight = 'bold';
+    labelSpan.style.minWidth = '120px'; 
+    labelSpan.style.textAlign = 'left';
+    labelSpan.style.backgroundColor = '#e9e9e9'; 
+    labelSpan.style.borderRight = '1px solid #ccc';
+    labelSpan.style.borderRadius = '5px 0 0 5px';
+    
+    // Campo de Entrada (Input)
+    const input = document.createElement('input');
+    input.type = type; 
+    input.id = id;
+    input.value = defaultValue;
+    input.placeholder = ''; 
+    input.style.flexGrow = '1'; 
+    input.style.padding = '8px 10px';
+    input.style.border = 'none'; 
+    input.style.boxSizing = 'border-box';
+    input.style.fontSize = '14px';
+    input.style.fontWeight = 'normal';
+    input.style.backgroundColor = 'transparent'; 
+    input.style.textAlign = (type === 'number') ? 'right' : 'left'; 
+
+    div.appendChild(labelSpan);
+    div.appendChild(input);
+    return div;
+}
+
+/**
+ * Crea o actualiza el contenedor flotante principal (el cual contiene el botón y el panel).
+ */
+function getOrCreateContainer() {
+    let container = document.getElementById(UI_CONTAINER_ID);
     if (container) return container;
 
     container = document.createElement('div');
-    container.id = 'blocking-status-container';
-    
-    // Estilos Fijos para aparecer en la esquina superior derecha
+    container.id = UI_CONTAINER_ID;
     container.style.position = 'fixed';
-    container.style.top = '70px'; 
-    container.style.right = '20px';
-    container.style.zIndex = '9999';
-    container.style.width = '350px';
-    container.style.padding = '10px';
-    container.style.borderRadius = '4px';
-    container.style.boxShadow = '0 3px 10px rgba(0,0,0,0.2)';
-    container.style.fontWeight = 'bold';
+    container.style.top = '10px'; 
+    container.style.left = '10px'; 
+    container.style.zIndex = '99999'; 
+    container.style.maxWidth = '300px'; 
+    container.style.fontFamily = 'Arial, sans-serif';
+
+    // Crear el botón de anclaje
+    const anchorButton = document.createElement('button');
+    anchorButton.id = `${UI_CONTAINER_ID}-anchor`;
+    anchorButton.textContent = '🔒'; 
     
-    document.body.prepend(container);
+    // Estilos del botón de anclaje
+    anchorButton.style.padding = '5px 8px'; 
+    anchorButton.style.borderRadius = '4px'; 
+    anchorButton.style.backgroundColor = '#0070D2'; 
+    anchorButton.style.opacity = '0.8'; 
+    anchorButton.style.color = 'white';
+    anchorButton.style.border = 'none';
+    anchorButton.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.2)';
+    anchorButton.style.cursor = 'pointer';
+    anchorButton.style.fontSize = '14px'; 
+    anchorButton.style.position = 'absolute'; 
+    anchorButton.style.left = '0'; 
+    anchorButton.style.top = '5px'; 
+
+    // Toggle de visibilidad del panel
+    anchorButton.onclick = () => {
+        const panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
+        if (panel) {
+            const isVisible = panel.style.left === '0px';
+            panel.style.left = isVisible ? '-320px' : '0px';
+            anchorButton.textContent = isVisible ? '🔒' : '→'; 
+        }
+    };
+
+    container.appendChild(anchorButton);
+    document.body.appendChild(container);
     return container;
 }
 
-// -------------------------------------------------------------
-// *IMPORTANTE: Definiciones de funciones de ACCIÓN y LÓGICA DE EVENTOS
-// -------------------------------------------------------------
+// --- 5. Lógica de Modal (Inyección y Contenido) ---
 
-// Función para solicitar el bloqueo (muestra el prompt)
-window.pedirBloqueo = function(clientId, userName) {
-    // Usamos confirm() / prompt() como fallback simple, idealmente se usaría un modal UI
-    const team = prompt(`Cliente libre. Usuario: ${userName}. \n\nIngresa tu Equipo o Área (Ej: QA, TMO):`);
-    if (team) {
-        window.createBlocking(clientId, userName, team);
-    }
-};
-
-// Función para liberar el cliente (muestra el confirm)
-window.liberarCliente = function(clientId, blockerName, currentUserName) {
-    // Si otro usuario está bloqueando, pedimos confirmación adicional
-    if (currentUserName !== blockerName) {
-         if (!confirm(`ADVERTENCIA: Bloqueado por ${blockerName}. ¿Desea forzar la liberación?`)) return;
-    } else if (!confirm("¿Confirmar liberación del cliente?")) {
+/**
+ * Crea e inyecta el modal de entrada de datos.
+ */
+function createModal(clienteId) {
+    let modal = document.getElementById(MODAL_ID);
+    if (modal) {
+        // Si el modal ya existe, solo actualizamos los valores de los inputs
+        document.getElementById(`${MODAL_ID}-user`).value = USER_DATA.usuario_nombre;
+        document.getElementById(`${MODAL_ID}-team`).value = USER_DATA.equipo;
+        document.getElementById(`${MODAL_ID}-days`).value = DEFAULT_BLOCK_DAYS;
+        modal.style.display = 'flex';
         return;
     }
-    window.deleteBlocking(clientId, currentUserName);
-};
 
-// --- Configuración de Event Listeners (Solución al fallo de click) ---
+    // --- 5.1. Backdrop (Fondo Oscuro) ---
+    modal = document.createElement('div');
+    modal.id = MODAL_ID;
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    modal.style.zIndex = '100000';
+    modal.style.display = 'flex';
+    modal.style.justifyContent = 'center';
+    modal.style.alignItems = 'center';
+    modal.style.fontFamily = 'Arial, sans-serif';
 
-function setupButtonListeners(clientId, userName, blockerName) {
-    // 1. Botón de Bloqueo (Cliente Libre)
-    const blockButton = document.getElementById('block-client-button');
-    if (blockButton) {
-        // Aseguramos que el evento se adjunte directamente
-        blockButton.addEventListener('click', () => window.pedirBloqueo(clientId, userName));
-    }
+    // --- 5.2. Dialog (Contenido del Modal) ---
+    const dialog = document.createElement('div');
+    dialog.style.backgroundColor = 'white';
+    dialog.style.padding = '25px';
+    dialog.style.borderRadius = '10px';
+    dialog.style.width = '350px';
+    dialog.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.3)';
 
-    // 2. Botón de Liberación (Cliente Bloqueado)
-    const releaseButton = document.getElementById('release-client-button');
-    if (releaseButton) {
-        // Aseguramos que el evento se adjunte directamente
-        releaseButton.addEventListener('click', () => window.liberarCliente(clientId, blockerName, userName));
+    // 5.2.1. Título y Botón de Cerrar
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+    header.style.marginBottom = '20px';
+    
+    const title = document.createElement('h4');
+    title.textContent = '🔒 Confirmar Datos de Bloqueo';
+    title.style.margin = '0';
+    title.style.color = '#0070D2';
+    title.style.fontSize = '18px';
+
+    const closeButton = document.createElement('button');
+    closeButton.textContent = '✕';
+    closeButton.style.background = 'none';
+    closeButton.style.border = 'none';
+    closeButton.style.fontSize = '18px';
+    closeButton.style.cursor = 'pointer';
+    closeButton.style.color = '#555';
+    closeButton.onclick = closeModal;
+
+    header.appendChild(title);
+    header.appendChild(closeButton);
+    dialog.appendChild(header);
+
+    // 5.2.2. Inputs (Usando los valores cargados/por defecto)
+    const inputUser = createStyledInput(
+        `${MODAL_ID}-user`, 
+        'Usuario', 
+        USER_DATA.usuario_nombre,
+        'text'
+    );
+    const inputTeam = createStyledInput(
+        `${MODAL_ID}-team`, 
+        'Frente de Pruebas (Equipo)', 
+        USER_DATA.equipo,
+        'text'
+    );
+    const inputDays = createStyledInput(
+        `${MODAL_ID}-days`, 
+        'Bloquear por (Días)', 
+        DEFAULT_BLOCK_DAYS,
+        'number'
+    );
+    
+    // Configuración específica para el input de días
+    const daysInput = inputDays.querySelector('input');
+    daysInput.min = 1;
+    daysInput.max = 365;
+    
+    dialog.appendChild(inputUser);
+    dialog.appendChild(inputTeam);
+    dialog.appendChild(inputDays);
+
+    // 5.2.3. Área de Error y Botón de Acción
+    const errorDiv = document.createElement('div');
+    errorDiv.id = `${MODAL_ID}-error`;
+    errorDiv.style.color = '#c93838'; 
+    errorDiv.style.fontSize = '12px';
+    errorDiv.style.marginBottom = '15px';
+    dialog.appendChild(errorDiv);
+
+    const lockButton = document.createElement('button');
+    lockButton.textContent = 'Confirmar y Bloquear Cliente';
+    lockButton.style.padding = '12px 15px';
+    lockButton.style.borderRadius = '5px';
+    lockButton.style.fontWeight = 'bold';
+    lockButton.style.cursor = 'pointer';
+    lockButton.style.border = 'none';
+    lockButton.style.width = '100%';
+    lockButton.style.backgroundColor = '#187c34'; 
+    lockButton.style.color = 'white';
+    lockButton.style.textTransform = 'uppercase';
+    lockButton.onclick = () => handleLock(clienteId);
+
+    dialog.appendChild(lockButton);
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+
+    // Centrar y mostrar
+    modal.style.display = 'flex';
+}
+
+/**
+ * Cierra y oculta el modal.
+ */
+function closeModal() {
+    const modal = document.getElementById(MODAL_ID);
+    if (modal) {
+        modal.style.display = 'none';
+        const errorDiv = document.getElementById(`${MODAL_ID}-error`);
+        if (errorDiv) errorDiv.textContent = '';
     }
 }
 
+// --- 6. Lógica de UI y Renderizado del Panel Principal ---
 
-// --- Lógica de Comunicación con el Service Worker (Proxy) ---
+/**
+ * Renderiza el estado actual del bloqueo dentro del panel deslizable.
+ * (Resto de la función renderUI permanece sin cambios)
+ */
+function renderUI(clienteId, bloqueo) {
+    const container = getOrCreateContainer();
+    
+    let panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
+    if (panel) panel.remove();
+    
+    panel = document.createElement('div');
+    panel.id = `${UI_CONTAINER_ID}-panel`;
+    panel.style.width = '300px';
+    panel.style.backgroundColor = 'white';
+    panel.style.borderRadius = '8px';
+    panel.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
+    panel.style.padding = '15px';
+    panel.style.position = 'fixed';
+    panel.style.top = '35px'; 
+    panel.style.left = '0px'; 
+    panel.style.transition = 'left 0.3s ease-in-out'; 
 
-window.createBlocking = async function(clientId, userName, team) {
-    const statusContainer = document.getElementById('blocking-status-container');
-    if (statusContainer) statusContainer.innerHTML = `<div style="color:#0070D2;">Bloqueando cliente (Comunicando con API)...</div>`;
+    // Título
+    const title = document.createElement('h3');
+    title.textContent = 'Bloqueo de Cliente';
+    title.style.margin = '0 0 10px 0';
+    title.style.fontSize = '16px';
+    title.style.color = '#0070D2';
+    panel.appendChild(title);
 
-    const bloqueoData = {
-        cliente_id: clientId,
-        usuario_nombre: userName,
-        equipo: team,
-        duracion_minutos: 120 
+    // Botón de Acción (Bloquear/Liberar)
+    const actionButton = document.createElement('button');
+    actionButton.style.padding = '10px 15px';
+    actionButton.style.borderRadius = '5px';
+    actionButton.style.fontWeight = 'bold';
+    actionButton.style.cursor = 'pointer';
+    actionButton.style.border = 'none';
+    actionButton.style.width = '100%';
+    actionButton.style.textTransform = 'uppercase';
+
+    // Área de Mensaje de Estado
+    let statusMessage = '';
+    const statusDiv = document.createElement('div');
+    statusDiv.id = `${UI_CONTAINER_ID}-status-msg`;
+    statusDiv.style.marginTop = '15px';
+    statusDiv.style.padding = '12px';
+    statusDiv.style.borderRadius = '5px';
+    statusDiv.style.fontSize = '12px';
+    statusDiv.style.color = '#333';
+    statusDiv.style.textAlign = 'center';
+    
+    if (bloqueo) {
+        // Cliente BLOQUEADO
+        const expirationTime = new Date(bloqueo.tiempo_expiracion).toLocaleTimeString();
+        statusMessage = `🔴 **BLOQUEADO** por ${bloqueo.usuario_nombre} (${bloqueo.equipo}).<br>Expira: ${expirationTime}`;
+        actionButton.textContent = '🔓 Liberar Cliente';
+        actionButton.style.backgroundColor = '#c93838'; 
+        actionButton.style.color = 'white';
+        statusDiv.style.backgroundColor = '#ffebe5'; 
+        
+        actionButton.onclick = () => handleUnlock(clienteId);
+    } else {
+        // Cliente LIBRE
+        statusMessage = '🟢 **Cliente Libre**. Haz clic para iniciar el bloqueo.';
+        actionButton.textContent = '🔒 Bloquear Cliente';
+        actionButton.style.backgroundColor = '#187c34'; 
+        actionButton.style.color = 'white';
+        statusDiv.style.backgroundColor = '#e5fff3'; 
+        
+        actionButton.onclick = () => createModal(clienteId);
+    }
+
+    statusDiv.innerHTML = statusMessage.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); 
+
+    panel.appendChild(actionButton);
+    panel.appendChild(statusDiv);
+    container.appendChild(panel);
+    
+    const anchorButton = document.getElementById(`${UI_CONTAINER_ID}-anchor`);
+    if (anchorButton) anchorButton.textContent = '→'; 
+}
+
+// ... (renderLoading y renderError permanecen sin cambios significativos)
+
+/**
+ * Muestra un mensaje de carga dentro del panel principal.
+ */
+function renderLoading(message) {
+    const container = getOrCreateContainer(); 
+    let panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
+    
+    if (!panel) {
+        panel = document.createElement('div');
+        panel.id = `${UI_CONTAINER_ID}-panel`;
+        panel.style.width = '300px';
+        panel.style.backgroundColor = 'white';
+        panel.style.borderRadius = '8px';
+        panel.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
+        panel.style.padding = '15px';
+        panel.style.position = 'fixed';
+        panel.style.top = '35px'; 
+        panel.style.left = '0px'; 
+        panel.style.transition = 'left 0.3s ease-in-out';
+        container.appendChild(panel);
+    } else {
+        panel.style.left = '0px';
+    }
+    
+    panel.innerHTML = `
+        <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #0070D2;">Bloqueo de Cliente</h3>
+        <div style="padding: 20px; text-align: center; background-color: #f0f0f0; border-radius: 5px;">
+            <p style="margin: 0; font-weight: bold; color: #555;">⏳ ${message}</p>
+        </div>
+    `;
+    
+    const anchor = document.getElementById(`${UI_CONTAINER_ID}-anchor`);
+    if (anchor) anchor.textContent = '→'; 
+}
+
+/**
+ * Muestra un mensaje de error dentro del panel principal.
+ */
+function renderError(message) {
+    const container = getOrCreateContainer(); 
+    let panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
+    if (!panel) {
+        renderLoading("Error de inicialización."); // Asegura que el panel exista
+        panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
+    }
+    showPanel(); 
+    panel.innerHTML = `
+        <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #0070D2;">Bloqueo de Cliente</h3>
+        <div style="padding: 20px; text-align: center; background-color: #ffcccc; border-radius: 5px;">
+            <p style="margin: 0; font-weight: bold; color: #cc0000;">🚨 ${message}</p>
+        </div>
+    `;
+}
+
+// --- 7. Handlers de Acción (Bloquear / Liberar) ---
+
+/**
+ * Maneja la acción de Bloquear Cliente, leyendo los datos del modal y guardándolos.
+ */
+async function handleLock(clienteId) {
+    // 1. Leer y validar campos del MODAL
+    const errorDiv = document.getElementById(`${MODAL_ID}-error`);
+    if (errorDiv) errorDiv.textContent = ''; 
+
+    const inputUser = document.getElementById(`${MODAL_ID}-user`);
+    const inputTeam = document.getElementById(`${MODAL_ID}-team`);
+    const inputDays = document.getElementById(`${MODAL_ID}-days`);
+    
+    const usuarioNombre = inputUser ? inputUser.value.trim() : '';
+    const equipoNombre = inputTeam ? inputTeam.value.trim() : '';
+    const blockDays = inputDays ? parseInt(inputDays.value.trim()) : 0;
+    
+    // Validación de campos
+    if (!usuarioNombre || !equipoNombre) {
+        if (errorDiv) errorDiv.textContent = "Error: Usuario y Equipo son obligatorios.";
+        return;
+    }
+    if (isNaN(blockDays) || blockDays <= 0 || blockDays > 365) {
+        if (errorDiv) errorDiv.textContent = "Error: La duración debe ser un número válido de días (1-365).";
+        return;
+    }
+
+    // 2. Guardar los datos actuales en memoria (para el estado de la sesión)
+    USER_DATA.usuario_nombre = usuarioNombre;
+    USER_DATA.equipo = equipoNombre;
+    DEFAULT_BLOCK_DAYS = blockDays;
+    
+    // 3. Guardar los datos en el almacenamiento persistente (chrome.storage)
+    saveLastBlockData(usuarioNombre, equipoNombre, blockDays);
+
+    // Calcular duración en minutos
+    const duracionMinutos = blockDays * 24 * 60; 
+
+    // Cerrar el modal y mostrar el panel principal con el estado de carga
+    closeModal();
+    renderLoading(`Bloqueando por ${blockDays} días...`);
+    
+    const payload = {
+        cliente_id: clienteId,
+        usuario_nombre: usuarioNombre,
+        equipo: equipoNombre,
+        duracion_minutos: duracionMinutos 
     };
 
     try {
-        const response = await chrome.runtime.sendMessage({
-            action: "API_FETCH",
-            method: 'POST',
-            url: 'base', 
-            data: bloqueoData
-        });
+        const response = await sendMessageToServiceWorker('base', 'POST', payload);
         
-        // Verifica si la respuesta es 201 (Creado)
-        if (response && response.status === 201) {
-            console.log("Bloqueo exitoso. Status 201 recibido.");
-            window.checkBlockingStatus(clientId, userName); 
-        } else if (response) {
-            // Maneja otros estados HTTP que no sean el esperado 201
-            console.error(`Error al crear bloqueo. Status: ${response.status}`, response.data);
-            
-            // Intenta extraer un mensaje de error detallado de la respuesta de la API (si existe)
-            const errorDetail = response.data && response.data.message ? response.data.message : 'Verifique los logs del Service Worker/Render.';
-
-            statusContainer.innerHTML = `<div style="color:red; padding:5px;">Error ${response.status}: ${errorDetail}</div>`;
-            setupButtonListeners(clientId, userName); // Adjuntar listeners de nuevo para reintentar
+        if (response.status === 201) {
+            console.log("Bloqueo creado exitosamente:", response.data.bloqueo);
+            renderUI(clienteId, response.data.bloqueo);
+        } else if (response.status === 400) {
+            console.error("Error de validación al bloquear:", response.data.message);
+            renderError("Error de validación: " + response.data.message); 
         } else {
-             // Maneja si la respuesta del Service Worker fue null/undefined
-            statusContainer.innerHTML = `<div style="color:red; padding:5px;">Error: Respuesta de Service Worker no válida.</div>`;
+            console.error("Error al crear bloqueo. Status:", response.status, response.data);
+            renderError("No se pudo crear el bloqueo.");
         }
-
-    } catch (e) {
-        console.error("Fallo al crear bloqueo:", e);
-        // Nota: Usamos alert() aquí como fallback simple.
-        alert("Error de comunicación con el Service Worker (POST)."); 
-    }
-};
-
-window.deleteBlocking = async function(clientId, userName) {
-    const statusContainer = document.getElementById('blocking-status-container');
-    if (statusContainer) statusContainer.innerHTML = `<div style="color:gray;">Liberando cliente...</div>`;
-
-    try {
-        const response = await chrome.runtime.sendMessage({
-            action: "API_FETCH",
-            method: 'DELETE',
-            url: clientId, 
-        });
-
-        // 200: Éxito; 404: Ya estaba libre o se eliminó
-        if (response && (response.status === 200 || response.status === 404)) {
-            window.checkBlockingStatus(clientId, userName); 
-        } else {
-            statusContainer.innerHTML = `<div style="color:red; padding:5px;">Error ${response ? response.status : 'N/A'} al liberar cliente.</div>`;
-            setupButtonListeners(clientId, userName); // Adjuntar listeners de nuevo para reintentar
-        }
-
-    } catch (e) {
-        console.error("Fallo al liberar cliente:", e);
-        alert("Error de comunicación con el Service Worker (DELETE).");
-    }
-};
-
-
-// Chequea el estado actual del cliente (GET)
-window.checkBlockingStatus = async function(clientId, userName) {
-    const statusContainer = document.getElementById('blocking-status-container');
-    if (!statusContainer) return;
-
-    statusContainer.innerHTML = `<div style="color: #0070D2;">⌛ Verificando estado de bloqueo...</div>`;
-    statusContainer.style.backgroundColor = '#f0f0f0';
-
-    try {
-        const response = await chrome.runtime.sendMessage({
-            action: "API_FETCH",
-            method: 'GET',
-            url: clientId, 
-        });
-
-        if (response && response.status === 200) {
-            // Caso 1: CLIENTE BLOQUEADO (Servidor responde 200)
-            const bloqueo = response.data;
-            const expirationTime = new Date(bloqueo.tiempo_expiracion).toLocaleTimeString();
-            
-            // Lógica de visualización para BLOQUEADO (Rojo)
-            statusContainer.style.backgroundColor = '#ffeaea'; 
-            statusContainer.style.borderLeft = '4px solid #f75d59';
-
-            statusContainer.innerHTML = `
-                <div style="color: #cc0000; padding: 5px;">
-                    🚨 **CLIENTE EN USO POR PRUEBAS**
-                    <hr style="margin: 5px 0; border-color: #f75d59;">
-                    **Encargado:** <strong>${bloqueo.usuario_nombre}</strong> (${bloqueo.equipo})
-                    <br>
-                    *Se liberará automáticamente a las ${expirationTime}*
-                    <button id="release-client-button"
-                        style="margin-top: 8px; background-color: #cc0000; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
-                        Liberar
-                    </button>
-                </div>
-            `;
-            // IMPORTANTE: Adjuntar el listener DEBE hacerse después de que el elemento existe en el DOM
-            setupButtonListeners(clientId, userName, bloqueo.usuario_nombre); 
-
-        } else if (response && response.status === 404) {
-            // Caso 2: CLIENTE LIBRE (Servidor responde 404)
-            statusContainer.style.backgroundColor = '#e6ffe6'; 
-            statusContainer.style.borderLeft = '4px solid #4CAF50';
-            
-            statusContainer.innerHTML = `
-                <div style="color: #38761d; padding: 5px;">
-                    ✅ **Cliente Libre.**
-                    <button id="block-client-button"
-                        style="margin-top: 8px; background-color: #4CAF50; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
-                        Bloquear para Pruebas
-                    </button>
-                </div>
-            `;
-            // IMPORTANTE: Adjuntar el listener DEBE hacerse después de que el elemento existe en el DOM
-            setupButtonListeners(clientId, userName); 
-
-        } else {
-            // Caso 3: Error Real (500, 400, o Service Worker falló)
-            statusContainer.innerHTML = `<div style="color: red; padding: 5px;">Error ${response ? response.status : 'N/A'} desconocido. Revise la API y Service Worker.</div>`;
-        }
-
     } catch (error) {
-        console.error("Fallo la comunicación con el Service Worker:", error);
-        statusContainer.innerHTML = `<div style="color: orange; padding: 5px;">⚠️ Error de comunicación. Reinicie la extensión.</div>`;
-    }
-}
-
-
-// =============================================================
-// INICIO DE LA EXTENSIÓN
-// =============================================================
-
-// Variable para rastrear la última URL procesada (ya no es estrictamente necesaria, pero la mantenemos)
-let lastProcessedUrl = location.href; 
-let observer = null;
-
-function initializeExtension() {
-    console.log("Blocking Ext: 4. Ejecutando initializeExtension."); // Debug 4: Inicio de la lógica principal
-    const currentUrl = location.href;
-    const clientId = getClientIdFromUrl();
-    const userName = getUserNameFromSession();
-    const statusContainer = document.getElementById('blocking-status-container'); 
-
-    console.log("Blocking Ext: URL actual:", currentUrl, "| ID Cliente encontrado:", clientId); // Debug 5: Muestra la URL y el ID
-    
-    // **LÓGICA DE OPTIMIZACIÓN MEJORADA:**
-    // Si la URL NO ha cambiado, y es una cuenta, y la caja ya existe, no hacemos nada.
-    if (currentUrl === lastProcessedUrl && statusContainer && clientId) {
-        console.log("Blocking Ext: Optimizando: URL no ha cambiado y ya está activa.");
-        return; 
-    }
-    
-    // Si la URL ha cambiado, actualizamos.
-    lastProcessedUrl = currentUrl; 
-
-    if (clientId) {
-        console.log("Blocking Ext: A) Es página de Cuenta. Inyectando caja de estado."); // Debug 6: Ruta de Cuenta
-        // Caso A: Es una página de Cuenta. Inyectar y verificar estado.
-        injectStatusContainer();
-        window.checkBlockingStatus(clientId, userName); 
-    } else {
-        console.log("Blocking Ext: B) No es página de Cuenta. Eliminando caja de estado (si existe)."); // Debug 7: Ruta de No-Cuenta
-        // Caso B: NO es una página de Cuenta (Caso, Contacto, etc.). Eliminar el contenedor.
-        if (statusContainer) {
-            statusContainer.remove(); 
-        }
+        console.error("Error de red o SW al bloquear:", error);
+        renderError("Error de comunicación al bloquear.");
     }
 }
 
 /**
- * Configura un MutationObserver para detectar cambios en el DOM (navegación SPA).
- * Este callback se dispara en CADA cambio importante del DOM.
+ * Maneja la acción de Liberar Cliente.
+ * (Resto de la función handleUnlock permanece sin cambios)
  */
-function setupMutationObserver() {
-    console.log("Blocking Ext: 2. Iniciando setupMutationObserver."); // Debug 2: Inicio de la configuración del Observer
-    // Si ya existe un observador, lo desconectamos
-    if (observer) {
-        observer.disconnect();
+async function handleUnlock(clienteId) {
+    renderLoading("Liberando...");
+
+    try {
+        const response = await sendMessageToServiceWorker(clienteId, 'DELETE');
+        
+        if (response.status === 204 || response.status === 404) {
+            console.log("Bloqueo eliminado exitosamente.");
+            renderUI(clienteId, null); 
+        } else {
+            console.error("Error al eliminar bloqueo. Status:", response.status);
+            renderError("No se pudo liberar el bloqueo.");
+        }
+    } catch (error) {
+        console.error("Error de red o SW al liberar:", error);
+        renderError("Error de comunicación al liberar.");
+    }
+}
+
+
+// --- 8. Inicialización y Observador de URL ---
+
+let currentClientId = null;
+let isExtensionActive = false;
+
+/**
+ * Función que se ejecuta al cargar la página o al navegar en la aplicación.
+ */
+async function initializeExtension() {
+    console.log("Blocking Ext: Ejecutando initializeExtension.");
+
+    // ** 1. Cargar datos persistentes antes de inicializar la UI **
+    await loadSavedData(); 
+
+    const newClientId = getClientIdFromUrl();
+    const container = document.getElementById(UI_CONTAINER_ID);
+
+    if (!newClientId) {
+        isExtensionActive = false;
+        if (container) container.remove();
+        closeModal();
+        return;
     }
 
-    const targetNode = document.body; 
-    // Configuramos para escuchar la lista de hijos (childList) y todo el subárbol (subtree)
-    // Esto asegura que detecte cuando el contenido principal de Salesforce se reemplaza.
-    const config = { childList: true, subtree: true }; 
+    if (newClientId === currentClientId && isExtensionActive) {
+        return;
+    }
 
-    // Usamos el callback para forzar la inicialización después de un pequeño retraso.
-    const callback = function() {
-        // El setTimeout es CRUCIAL en Salesforce. Garantiza que la URL tenga tiempo de actualizarse
-        // antes de que getClientIdFromUrl() la compruebe.
-        setTimeout(initializeExtension, 100); 
-    };
-
-    observer = new MutationObserver(callback);
-    observer.observe(targetNode, config);
-    console.log("Blocking Ext: 3. MutationObserver en escucha en el BODY."); // Debug 3: Observer activo
+    currentClientId = newClientId;
+    isExtensionActive = true;
     
-    // Ejecutamos la inicialización inmediatamente después de establecer el observador
-    initializeExtension(); 
+    getOrCreateContainer();
+
+    renderLoading("Verificando estado del bloqueo...");
+    
+    try {
+        // 2. Verificar estado actual (GET)
+        const response = await sendMessageToServiceWorker(currentClientId, 'GET');
+        
+        if (response.status === 200) {
+            renderUI(currentClientId, response.data);
+        } else if (response.status === 404) {
+            renderUI(currentClientId, null); 
+        } else {
+            console.error("Error al consultar bloqueo. Status:", response.status, response.data);
+            renderError("Error al consultar estado. Código: " + response.status);
+        }
+    } catch (error) {
+        console.error("Error de comunicación inicial:", error);
+        renderError("Fallo de comunicación con la API (revisa Service Worker o red).");
+    }
 }
 
+// Iniciar la extensión al cargar la página
+initializeExtension();
 
-// =============================================================
-// INICIALIZACIÓN ROBUSTA
-// =============================================================
-
-// Iniciar la extensión de forma robusta.
-// 1. Usa DOMContentLoaded para la carga inicial (Hard Reload), que es más fiable que un setTimeout fijo.
-// 2. Si el DOM ya está listo (script inyectado tarde), se ejecuta inmediatamente.
-if (document.readyState === 'loading') {
-    console.log("Blocking Ext: 0. Esperando DOMContentLoaded..."); // Debug 8: Esperando evento
-    document.addEventListener('DOMContentLoaded', setupMutationObserver);
-} else {
-    console.log("Blocking Ext: 0. DOM ya cargado. Ejecutando inmediatamente."); // Debug 9: Ejecución inmediata
-    setupMutationObserver();
-}
+// Observar cambios en la URL (para SPA como Salesforce Lightning)
+let lastUrl = location.href;
+new MutationObserver(() => {
+    const url = location.href;
+    if (url !== lastUrl) {
+        lastUrl = url;
+        initializeExtension();
+    }
+}).observe(document, { subtree: true, childList: true });
