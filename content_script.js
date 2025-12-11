@@ -202,21 +202,27 @@ function initializeExtension() {
     const clientId = getClientIdFromUrl();
     const userName = getUserNameFromSession();
     
-    // Solo proceder si es una página de cliente (Account)
     if (clientId) {
-        // Buscar un contenedor estable para la inyección (Prioridad: Actions, Fallback: oneContent)
-        let target = document.querySelector('.slds-page-header__actions'); 
+        // Opción 1: Buscar el contenedor principal del componente de Lightning (el área de contenido)
+        let target = document.querySelector('.forcePageHost'); 
         
         if (!target) {
-            // Fallback: Usar el contenedor principal de la página Lightning
-            target = document.querySelector('.oneContent'); 
+            // Opción 2: Buscar el contenedor del encabezado principal (usando el más genérico)
+            target = document.querySelector('.forceCommunityRecord');
+        }
+        
+        // Si no encontramos un contenedor específico, usamos el cuerpo del registro
+        if (!target) {
+             target = document.querySelector('.flexipageComponent');
         }
         
         if (target) {
-            injectStatusContainer(target);
+            // Inyectamos el contenedor y procedemos con la verificación
+            // Es importante que la inyección ocurra solo si no existe
+            const container = injectStatusContainer(target);
             checkBlockingStatus(clientId, userName);
         } else {
-            console.warn("Extensión TMO: No se encontró un punto de inyección estable en el DOM.");
+            console.error("Extensión TMO: Falla al encontrar un punto de inyección estable. Último selector fallido: .flexipageComponent");
         }
     }
 }
