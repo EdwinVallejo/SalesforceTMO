@@ -352,7 +352,7 @@ function renderUI(clienteId, bloqueo) {
     panel.style.transition = 'left 0.3s ease-in-out'; 
 
     const title = document.createElement('h3');
-    title.textContent = 'Bloqueo de Cuenta 🏢 🏢';
+    title.textContent = 'Bloqueo de Cuenta 🏢 ';
     title.style.margin = '0 0 10px 0';
     title.style.fontSize = '16px';
     title.style.color = '#061C3F';
