@@ -1,7 +1,7 @@
 {
   "name": "salesforce-bloqueo-api",
   "version": "1.0.0",
-  "description": "API REST para gestionar estados de bloqueo de clientes de Salesforce.",
+  "description": "Gestionar bloqueo de cuentas en Salesforce.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

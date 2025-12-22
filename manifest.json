@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "Salesforce Client Blocking",
+    "name": "Account Blocking To Salesforce",
     "version": "1.0",
-    "description": "Bloquea clientes de Salesforce para QA/Testing.",
+    "description": "Bloquea cuentas de Salesforce.",
     "permissions": [
         "storage",
         "activeTab",

@@ -11,6 +11,7 @@ const UI_CONTAINER_ID = 'blocking-ext-ui-container';
 const MODAL_ID = 'blocking-ext-modal';
 const API_ACTION = "API_FETCH";
 const LAST_BLOCK_DATA_KEY = 'lastBlockData'; // Clave para chrome.storage
+const UI_FONT_FAMILY = "'Salesforce Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'";
 
 // Valores por defecto iniciales (se sobrescribirán con el almacenamiento)
 let USER_DATA = {
@@ -19,16 +20,34 @@ let USER_DATA = {
 };
 let DEFAULT_BLOCK_DAYS = 20; // Bloqueo por defecto de 20 días
 
-// --- 2. Funciones de Ayuda y Comunicación ---
 
-/**
- * Obtiene el ID del cliente (Account ID) de la URL actual.
- */
+function injectStyles() {
+    if (document.getElementById('blocking-ext-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'blocking-ext-styles';
+    style.textContent = `
+        #${UI_CONTAINER_ID}, #${MODAL_ID} {
+            font-family: ${UI_FONT_FAMILY} !important;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            color: #16325c; /* Color de texto estándar de Salesforce */
+        }
+        #${UI_CONTAINER_ID} button, #${MODAL_ID} button, #${MODAL_ID} input {
+            font-family: ${UI_FONT_FAMILY} !important;
+        }
+        #${UI_CONTAINER_ID}-panel h3, #${MODAL_ID} h4 {
+            font-weight: 700 !important;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+
 function getClientIdFromUrl() {
     const url = window.location.href;
     const match = url.match(/\/Account\/([a-zA-Z0-9]+)\/view/);
     if (match && match[1]) {
-        console.log(`Blocking Ext: ID Cliente encontrado: ${match[1]}`);
+        console.log(`Blocking Ext: ID Cuenta encontrado: ${match[1]}`);
         return match[1];
     }
     console.log("Blocking Ext: No se encontró Account ID en la URL.");
@@ -95,12 +114,8 @@ function saveLastBlockData(usuario_nombre, equipo, blockDays) {
     });
 }
 
+// --- 4. Componentes de UI ---
 
-// --- 4. Componentes de UI (Inputs y Contenedor) ---
-
-/**
- * Crea un input con estilo de formulario limpio: Label a la izquierda, valor a la derecha.
- */
 function createStyledInput(id, placeholder, defaultValue, type = 'text') {
     const div = document.createElement('div');
     div.style.display = 'flex'; 
@@ -110,31 +125,25 @@ function createStyledInput(id, placeholder, defaultValue, type = 'text') {
     div.style.borderRadius = '5px';
     div.style.backgroundColor = '#f9f9f9'; 
 
-    // Etiqueta (Label)
     const labelSpan = document.createElement('span');
     labelSpan.textContent = placeholder + ':';
-    labelSpan.style.padding = '8px 10px';
+    labelSpan.style.padding = '8px 7px';
     labelSpan.style.fontSize = '12px';
     labelSpan.style.color = '#555';
     labelSpan.style.fontWeight = 'bold';
     labelSpan.style.minWidth = '120px'; 
-    labelSpan.style.textAlign = 'left';
     labelSpan.style.backgroundColor = '#e9e9e9'; 
     labelSpan.style.borderRight = '1px solid #ccc';
     labelSpan.style.borderRadius = '5px 0 0 5px';
     
-    // Campo de Entrada (Input)
     const input = document.createElement('input');
     input.type = type; 
     input.id = id;
     input.value = defaultValue;
-    input.placeholder = ''; 
     input.style.flexGrow = '1'; 
-    input.style.padding = '8px 10px';
+    input.style.padding = '8px 7px';
     input.style.border = 'none'; 
-    input.style.boxSizing = 'border-box';
     input.style.fontSize = '14px';
-    input.style.fontWeight = 'normal';
     input.style.backgroundColor = 'transparent'; 
     input.style.textAlign = (type === 'number') ? 'right' : 'left'; 
 
@@ -143,12 +152,11 @@ function createStyledInput(id, placeholder, defaultValue, type = 'text') {
     return div;
 }
 
-/**
- * Crea o actualiza el contenedor flotante principal (el cual contiene el botón y el panel).
- */
 function getOrCreateContainer() {
     let container = document.getElementById(UI_CONTAINER_ID);
     if (container) return container;
+
+    injectStyles(); // Aseguramos que los estilos existan al crear el contenedor
 
     container = document.createElement('div');
     container.id = UI_CONTAINER_ID;
@@ -157,28 +165,20 @@ function getOrCreateContainer() {
     container.style.left = '10px'; 
     container.style.zIndex = '99999'; 
     container.style.maxWidth = '300px'; 
-    container.style.fontFamily = 'Arial, sans-serif';
 
-    // Crear el botón de anclaje
     const anchorButton = document.createElement('button');
     anchorButton.id = `${UI_CONTAINER_ID}-anchor`;
     anchorButton.textContent = '🔒'; 
-    
-    // Estilos del botón de anclaje
     anchorButton.style.padding = '5px 8px'; 
     anchorButton.style.borderRadius = '4px'; 
-    anchorButton.style.backgroundColor = '#0070D2'; 
-    anchorButton.style.opacity = '0.8'; 
+    anchorButton.style.backgroundColor = '#226B86'; 
     anchorButton.style.color = 'white';
     anchorButton.style.border = 'none';
-    anchorButton.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.2)';
     anchorButton.style.cursor = 'pointer';
-    anchorButton.style.fontSize = '14px'; 
     anchorButton.style.position = 'absolute'; 
     anchorButton.style.left = '0'; 
     anchorButton.style.top = '5px'; 
 
-    // Toggle de visibilidad del panel
     anchorButton.onclick = () => {
         const panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
         if (panel) {
@@ -242,7 +242,7 @@ function createModal(clienteId) {
     const title = document.createElement('h4');
     title.textContent = '🔒 Confirmar Datos de Bloqueo';
     title.style.margin = '0';
-    title.style.color = '#0070D2';
+    title.style.color = '#061C3F';
     title.style.fontSize = '18px';
 
     const closeButton = document.createElement('button');
@@ -261,19 +261,19 @@ function createModal(clienteId) {
     // 5.2.2. Inputs (Usando los valores cargados/por defecto)
     const inputUser = createStyledInput(
         `${MODAL_ID}-user`, 
-        'Usuario', 
+        'Analista', 
         USER_DATA.usuario_nombre,
         'text'
     );
     const inputTeam = createStyledInput(
         `${MODAL_ID}-team`, 
-        'Frente de Pruebas (Equipo)', 
+        'Frente de pruebas', 
         USER_DATA.equipo,
         'text'
     );
     const inputDays = createStyledInput(
         `${MODAL_ID}-days`, 
-        'Bloquear por (Días)', 
+        'Dias de bloqueo', 
         DEFAULT_BLOCK_DAYS,
         'number'
     );
@@ -296,7 +296,7 @@ function createModal(clienteId) {
     dialog.appendChild(errorDiv);
 
     const lockButton = document.createElement('button');
-    lockButton.textContent = 'Confirmar y Bloquear Cliente';
+    lockButton.textContent = 'Confirmar y Bloquear Cuenta';
     lockButton.style.padding = '12px 15px';
     lockButton.style.borderRadius = '5px';
     lockButton.style.fontWeight = 'bold';
@@ -352,10 +352,10 @@ function renderUI(clienteId, bloqueo) {
     panel.style.transition = 'left 0.3s ease-in-out'; 
 
     const title = document.createElement('h3');
-    title.textContent = 'Bloqueo de Cliente';
+    title.textContent = 'Bloqueo de Cuenta 🏢 🏢';
     title.style.margin = '0 0 10px 0';
     title.style.fontSize = '16px';
-    title.style.color = '#0070D2';
+    title.style.color = '#061C3F';
     panel.appendChild(title);
 
     const actionButton = document.createElement('button');
@@ -380,14 +380,14 @@ function renderUI(clienteId, bloqueo) {
         
         statusDiv.innerHTML = `<b>🔴 BLOQUEADO</b> por ${bloqueo.usuario_nombre} (${bloqueo.equipo}).<br>Expira el: <b>${dateStr}</b> a las <b>${timeStr}</b>`;
         
-        actionButton.textContent = '🔓 Liberar Cliente';
+        actionButton.textContent = '🔓 Liberar Cuenta';
         actionButton.style.backgroundColor = '#c93838'; 
         actionButton.style.color = 'white';
         statusDiv.style.backgroundColor = '#ffebe5'; 
         actionButton.onclick = () => handleUnlock(clienteId);
     } else {
-        statusDiv.innerHTML = '<b>🟢 Cliente Libre</b>. Haz clic para iniciar el bloqueo.';
-        actionButton.textContent = '🔒 Bloquear Cliente';
+        statusDiv.innerHTML = '<b>🟢 Cuenta Disponible</b>. Haz clic para realizar el bloqueo.';
+        actionButton.textContent = '🔒 Bloquear Cuenta';
         actionButton.style.backgroundColor = '#187c34'; 
         actionButton.style.color = 'white';
         statusDiv.style.backgroundColor = '#e5fff3'; 
@@ -417,7 +417,7 @@ function renderLoading(message) {
         panel.style.left = '0px'; 
         container.appendChild(panel);
     }
-    panel.innerHTML = `<h3 style="margin: 0; font-size: 16px; color: #0070D2;">Bloqueo de Cliente</h3><p style="text-align:center;">⏳ ${message}</p>`;
+    panel.innerHTML = `<h3 style="margin: 0; font-size: 16px; color: #1e3760ff;">Bloqueo de Cuenta 🏢</h3><p style="text-align:center;">⏳ ${message}</p>`;
 }
 
 // --- 7. Handlers de Acción ---
@@ -478,7 +478,7 @@ function renderLoading(message) {
     }
     
     panel.innerHTML = `
-        <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #0070D2;">Bloqueo de Cliente</h3>
+        <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #1e3760ff;">Bloqueo de Cuenta 🏢</h3>
         <div style="padding: 20px; text-align: center; background-color: #f0f0f0; border-radius: 5px;">
             <p style="margin: 0; font-weight: bold; color: #555;">⏳ ${message}</p>
         </div>
@@ -500,7 +500,7 @@ function renderError(message) {
     }
     showPanel(); 
     panel.innerHTML = `
-        <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #0070D2;">Bloqueo de Cliente</h3>
+        <h3 style="margin: 0 0 10px 0; font-size: 16px; color: #1e3760ff;">Bloqueo de Cuenta 🏢</h3>
         <div style="padding: 20px; text-align: center; background-color: #ffcccc; border-radius: 5px;">
             <p style="margin: 0; font-weight: bold; color: #cc0000;">🚨 ${message}</p>
         </div>
@@ -509,9 +509,8 @@ function renderError(message) {
 
 // --- 7. Handlers de Acción (Bloquear / Liberar) ---
 
-/**
- * Maneja la acción de Bloquear Cliente, leyendo los datos del modal y guardándolos.
- */
+
+
 async function handleLock(clienteId) {
     // 1. Leer y validar campos del MODAL
     const errorDiv = document.getElementById(`${MODAL_ID}-error`);
@@ -646,7 +645,7 @@ async function initializeExtension() {
                 }
             }
         } catch (error) {
-            console.error("Error al inicializar cliente:", error);
+            console.error("Error al inicializar Cuenta:", error);
             if (newClientId === getClientIdFromUrl()) {
                 renderUI(newClientId, null);
             }
