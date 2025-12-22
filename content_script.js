@@ -336,7 +336,6 @@ function closeModal() {
  */
 function renderUI(clienteId, bloqueo) {
     const container = getOrCreateContainer();
-    
     let panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
     if (panel) panel.remove();
     
@@ -352,7 +351,6 @@ function renderUI(clienteId, bloqueo) {
     panel.style.left = '0px'; 
     panel.style.transition = 'left 0.3s ease-in-out'; 
 
-    // Título
     const title = document.createElement('h3');
     title.textContent = 'Bloqueo de Cliente';
     title.style.margin = '0 0 10px 0';
@@ -360,49 +358,41 @@ function renderUI(clienteId, bloqueo) {
     title.style.color = '#0070D2';
     panel.appendChild(title);
 
-    // Botón de Acción (Bloquear/Liberar)
     const actionButton = document.createElement('button');
-    actionButton.style.padding = '10px 15px';
+    actionButton.style.padding = '10px';
     actionButton.style.borderRadius = '5px';
-    actionButton.style.fontWeight = 'bold';
+    actionButton.style.width = '100%';
     actionButton.style.cursor = 'pointer';
     actionButton.style.border = 'none';
-    actionButton.style.width = '100%';
-    actionButton.style.textTransform = 'uppercase';
 
-    // Área de Mensaje de Estado
-    let statusMessage = '';
     const statusDiv = document.createElement('div');
-    statusDiv.id = `${UI_CONTAINER_ID}-status-msg`;
     statusDiv.style.marginTop = '15px';
     statusDiv.style.padding = '12px';
     statusDiv.style.borderRadius = '5px';
     statusDiv.style.fontSize = '12px';
-    statusDiv.style.color = '#333';
     statusDiv.style.textAlign = 'center';
     
     if (bloqueo) {
-        // Cliente BLOQUEADO
-        const expirationTime = new Date(bloqueo.tiempo_expiracion).toLocaleTimeString();
-        statusMessage = `🔴 **BLOQUEADO** por ${bloqueo.usuario_nombre} (${bloqueo.equipo}).<br>Expira: ${expirationTime}`;
+        // --- CAMBIO AQUÍ: Formateo de Fecha Completa ---
+        const expDate = new Date(bloqueo.tiempo_expiracion);
+        const dateStr = expDate.toLocaleDateString(); // Ejemplo: 18/12/2025
+        const timeStr = expDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); // Ejemplo: 14:30
+        
+        statusDiv.innerHTML = `<b>🔴 BLOQUEADO</b> por ${bloqueo.usuario_nombre} (${bloqueo.equipo}).<br>Expira el: <b>${dateStr}</b> a las <b>${timeStr}</b>`;
+        
         actionButton.textContent = '🔓 Liberar Cliente';
         actionButton.style.backgroundColor = '#c93838'; 
         actionButton.style.color = 'white';
         statusDiv.style.backgroundColor = '#ffebe5'; 
-        
         actionButton.onclick = () => handleUnlock(clienteId);
     } else {
-        // Cliente LIBRE
-        statusMessage = '🟢 **Cliente Libre**. Haz clic para iniciar el bloqueo.';
+        statusDiv.innerHTML = '<b>🟢 Cliente Libre</b>. Haz clic para iniciar el bloqueo.';
         actionButton.textContent = '🔒 Bloquear Cliente';
         actionButton.style.backgroundColor = '#187c34'; 
         actionButton.style.color = 'white';
         statusDiv.style.backgroundColor = '#e5fff3'; 
-        
         actionButton.onclick = () => createModal(clienteId);
     }
-
-    statusDiv.innerHTML = statusMessage.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); 
 
     panel.appendChild(actionButton);
     panel.appendChild(statusDiv);
@@ -410,6 +400,55 @@ function renderUI(clienteId, bloqueo) {
     
     const anchorButton = document.getElementById(`${UI_CONTAINER_ID}-anchor`);
     if (anchorButton) anchorButton.textContent = '→'; 
+}
+
+function renderLoading(message) {
+    const container = getOrCreateContainer(); 
+    let panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
+    if (!panel) {
+        panel = document.createElement('div');
+        panel.id = `${UI_CONTAINER_ID}-panel`;
+        panel.style.width = '300px';
+        panel.style.backgroundColor = 'white';
+        panel.style.borderRadius = '8px';
+        panel.style.padding = '15px';
+        panel.style.position = 'fixed';
+        panel.style.top = '35px'; 
+        panel.style.left = '0px'; 
+        container.appendChild(panel);
+    }
+    panel.innerHTML = `<h3 style="margin: 0; font-size: 16px; color: #0070D2;">Bloqueo de Cliente</h3><p style="text-align:center;">⏳ ${message}</p>`;
+}
+
+// --- 7. Handlers de Acción ---
+
+async function handleLock(clienteId) {
+    const usuarioNombre = document.getElementById(`${MODAL_ID}-user`).value.trim();
+    const equipoNombre = document.getElementById(`${MODAL_ID}-team`).value.trim();
+    const blockDays = parseInt(document.getElementById(`${MODAL_ID}-days`).value.trim());
+    
+    if (!usuarioNombre || !equipoNombre || isNaN(blockDays)) return;
+
+    USER_DATA.usuario_nombre = usuarioNombre;
+    USER_DATA.equipo = equipoNombre;
+    DEFAULT_BLOCK_DAYS = blockDays;
+    saveLastBlockData(usuarioNombre, equipoNombre, blockDays);
+
+    const duracionMinutos = blockDays * 24 * 60; 
+    closeModal();
+    renderLoading(`Bloqueando por ${blockDays} días...`);
+    
+    try {
+        const response = await sendMessageToServiceWorker('base', 'POST', {
+            cliente_id: clienteId,
+            usuario_nombre: usuarioNombre,
+            equipo: equipoNombre,
+            duracion_minutos: duracionMinutos 
+        });
+        if (response.status === 201) renderUI(clienteId, response.data.bloqueo);
+    } catch (error) {
+        console.error(error);
+    }
 }
 
 // ... (renderLoading y renderError permanecen sin cambios significativos)
@@ -564,53 +603,54 @@ async function handleUnlock(clienteId) {
 // --- 8. Inicialización y Observador de URL ---
 
 let currentClientId = null;
-let isExtensionActive = false;
+//let isExtensionActive = false;
 
 /**
  * Función que se ejecuta al cargar la página o al navegar en la aplicación.
  */
 async function initializeExtension() {
-    console.log("Blocking Ext: Ejecutando initializeExtension.");
-
-    // ** 1. Cargar datos persistentes antes de inicializar la UI **
-    await loadSavedData(); 
-
     const newClientId = getClientIdFromUrl();
-    const container = document.getElementById(UI_CONTAINER_ID);
 
+    // Si no hay ID de cliente en la URL, limpiamos y salimos
     if (!newClientId) {
-        isExtensionActive = false;
-        if (container) container.remove();
-        closeModal();
+        currentClientId = null;
+        const panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
+        if (panel) panel.remove();
+        const container = document.getElementById(UI_CONTAINER_ID);
+        if (container) container.style.display = 'none';
         return;
     }
 
-    if (newClientId === currentClientId && isExtensionActive) {
-        return;
-    }
-
-    currentClientId = newClientId;
-    isExtensionActive = true;
-    
-    getOrCreateContainer();
-
-    renderLoading("Verificando estado del bloqueo...");
-    
-    try {
-        // 2. Verificar estado actual (GET)
-        const response = await sendMessageToServiceWorker(currentClientId, 'GET');
+    // Si el ID es diferente al anterior, "reseteamos" la vista inmediatamente
+    if (newClientId !== currentClientId) {
+        currentClientId = newClientId;
         
-        if (response.status === 200) {
-            renderUI(currentClientId, response.data);
-        } else if (response.status === 404) {
-            renderUI(currentClientId, null); 
-        } else {
-            console.error("Error al consultar bloqueo. Status:", response.status, response.data);
-            renderError("Error al consultar estado. Código: " + response.status);
+        // Asegurar que el contenedor sea visible
+        const container = getOrCreateContainer();
+        container.style.display = 'block';
+        
+        // Cargar datos de usuario guardados
+        await loadSavedData(); 
+        
+        // Mostrar carga inmediatamente para evitar ver datos del cliente anterior
+        renderLoading("Actualizando cuenta...");
+
+        try {
+            const response = await sendMessageToServiceWorker(newClientId, 'GET');
+            // Verificación extra: ¿seguimos en la misma cuenta después de la respuesta asíncrona?
+            if (newClientId === getClientIdFromUrl()) {
+                if (response.status === 200) {
+                    renderUI(newClientId, response.data);
+                } else {
+                    renderUI(newClientId, null); 
+                }
+            }
+        } catch (error) {
+            console.error("Error al inicializar cliente:", error);
+            if (newClientId === getClientIdFromUrl()) {
+                renderUI(newClientId, null);
+            }
         }
-    } catch (error) {
-        console.error("Error de comunicación inicial:", error);
-        renderError("Fallo de comunicación con la API (revisa Service Worker o red).");
     }
 }
 
