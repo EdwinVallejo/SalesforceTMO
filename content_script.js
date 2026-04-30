@@ -170,10 +170,17 @@ function renderUI(clienteId, bloqueo) {
     if (bloqueo) {
         const expDate = new Date(bloqueo.tiempo_expiracion);
         statusDiv.innerHTML = `<b>🔴 BLOQUEADO</b> por ${bloqueo.usuario_nombre}.<br>Expira: ${expDate.toLocaleString()}`;
-        actionButton.textContent = '🔓 Liberar Cuenta';
-        actionButton.style.background = '#c93838'; actionButton.style.color = 'white';
+        
+        // Solo el dueño del bloqueo puede ver el botón de liberar
+        if (bloqueo.usuario_correo === USER_DATA.usuario_correo) {
+            actionButton.textContent = '🔓 Liberar Cuenta';
+            actionButton.style.background = '#c93838'; 
+            actionButton.style.color = 'white';
+            actionButton.onclick = () => handleUnlock(clienteId, bloqueo.pin);
+            panel.appendChild(actionButton);
+        }
+        
         statusDiv.style.background = '#ffebe5';
-        actionButton.onclick = () => handleUnlock(clienteId);
     } else {
         panel.innerHTML = `
             <h3>Bloqueo de Cuenta 🏢</h3>
@@ -192,7 +199,12 @@ function renderUI(clienteId, bloqueo) {
         actionButton.onclick = () => handleLockDirect(clienteId, parseInt(document.getElementById('direct-days').value));
     }
 
-    panel.appendChild(actionButton);
+    // Solo añadir el botón si es necesario (si no hay bloqueo o si somos el dueño)
+    if (!bloqueo || bloqueo.usuario_correo === USER_DATA.usuario_correo) {
+        // En el caso de bloqueo ya se añadió arriba, aquí para el caso de Disponible
+        if (!bloqueo) panel.appendChild(actionButton);
+    }
+    
     panel.appendChild(statusDiv);
     container.appendChild(panel);
 }
@@ -278,7 +290,15 @@ async function handleLockDirect(id, days) {
     } catch (e) { renderError("Error de conexión."); }
 }
 
-async function handleUnlock(id) {
+async function handleUnlock(id, correctPin) {
+    const inputPin = prompt("Ingresa el PIN de desbloqueo para liberar esta cuenta:");
+    
+    if (inputPin === null) return; // Cancelado
+    if (inputPin !== correctPin) {
+        alert("🚨 PIN incorrecto. No tienes permiso para liberar esta cuenta.");
+        return;
+    }
+
     renderLoading("Liberando...");
     try {
         const res = await sendMessageToServiceWorker(id, 'DELETE');
