@@ -59,9 +59,9 @@ function injectStyles() {
             background: white;
             padding: 30px;
             border-radius: 12px;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.22);
             max-width: 420px;
-            width: 90%;
+            width: 85%;
             text-align: center;
             border-top: 5px solid #c23934;
         }
@@ -73,7 +73,7 @@ function injectStyles() {
             margin: 20px 0;
             text-align: left;
         }
-        .blocking-ext-overlay-info p { margin: 5px 0; font-size: 13px; color: #333; }
+        .blocking-ext-overlay-info p { margin: 5px 0; font-size: 13px; color: #747474ff; }
         .blocking-ext-overlay-info b { color: #16325c; width: 70px; display: inline-block; }
     `;
     document.head.appendChild(style);
@@ -103,7 +103,7 @@ async function loadSavedData() {
                 USER_DATA = { ...USER_DATA, ...result[LAST_BLOCK_DATA_KEY] };
                 DEFAULT_BLOCK_DAYS = result[LAST_BLOCK_DATA_KEY].blockDays || 20;
             }
-            
+
             // 2. Cargar identidad real de la sesión (session)
             // Esto es crucial para evitar que datos viejos en 'local' permitan el bypass.
             chrome.storage.session.get('activeUser', (res) => {
@@ -136,7 +136,7 @@ function getOrCreateContainer() {
     container = document.createElement('div');
     container.id = UI_CONTAINER_ID;
     container.style.cssText = 'position:fixed; top:10px; left:10px; z-index:99999; max-width:300px;';
-    
+
     const anchor = document.createElement('button');
     anchor.id = `${UI_CONTAINER_ID}-anchor`;
     anchor.textContent = '🔒';
@@ -156,7 +156,7 @@ function renderUI(clienteId, bloqueo) {
     const container = getOrCreateContainer();
     let panel = document.getElementById(`${UI_CONTAINER_ID}-panel`);
     if (panel) panel.remove();
-    
+
     panel = document.createElement('div');
     panel.id = `${UI_CONTAINER_ID}-panel`;
     panel.style.cssText = 'width:300px; background:white; border-radius:8px; boxShadow:0 4px 12px rgba(0,0,0,0.2); padding:15px; position:fixed; top:35px; left:0; transition:left 0.3s ease;';
@@ -170,16 +170,16 @@ function renderUI(clienteId, bloqueo) {
     if (bloqueo) {
         const expDate = new Date(bloqueo.tiempo_expiracion);
         statusDiv.innerHTML = `<b>🔴 BLOQUEADO</b> por ${bloqueo.usuario_nombre}.<br>Expira: ${expDate.toLocaleString()}`;
-        
+
         // Solo el dueño del bloqueo puede ver el botón de liberar
         if (bloqueo.usuario_correo === USER_DATA.usuario_correo) {
             actionButton.textContent = '🔓 Liberar Cuenta';
-            actionButton.style.background = '#c93838'; 
+            actionButton.style.background = '#c93838';
             actionButton.style.color = 'white';
             actionButton.onclick = () => handleUnlock(clienteId, bloqueo.pin);
             panel.appendChild(actionButton);
         }
-        
+
         statusDiv.style.background = '#ffebe5';
     } else {
         panel.innerHTML = `
@@ -204,18 +204,18 @@ function renderUI(clienteId, bloqueo) {
         // En el caso de bloqueo ya se añadió arriba, aquí para el caso de Disponible
         if (!bloqueo) panel.appendChild(actionButton);
     }
-    
+
     panel.appendChild(statusDiv);
     container.appendChild(panel);
 }
 
 function showBlockOverlay(clienteId, bloqueo) {
     if (document.getElementById('blocking-ext-overlay')) return;
-    
+
     const overlay = document.createElement('div');
     overlay.id = 'blocking-ext-overlay';
-    overlay.style.cssText = 'position:fixed; top:160px; left:0; width:100%; height:calc(100% - 160px); background:rgba(0,0,0,0.5); backdrop-filter:blur(4px); z-index:99990; display:flex; justify-content:center; align-items:center; pointer-events:auto;';
-    
+    overlay.style.cssText = 'position: fixed; top: 190px; left: 0px; width: 100%; height: calc(100% - 150px); background: rgba(0, 0, 0, 0.1); backdrop-filter: blur(4px); z-index: 99990; display: flex; justify-content: center; align-items: center; pointer-events: auto;';
+
     overlay.innerHTML = `
         <div class="blocking-ext-overlay-card">
             <h2 style="margin:0; color:#c23934; font-size:22px;">🔒 Cuenta Bloqueada</h2>
@@ -255,7 +255,7 @@ function hideBlockOverlay() {
 function handleTempAccess(id, b) {
     hideBlockOverlay();
     if (tempAccessTimer) clearTimeout(tempAccessTimer);
-    
+
     const nt = document.createElement('div');
     nt.id = 'blocking-ext-temp-notify';
     nt.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#2e844a; color:white; padding:10px 20px; border-radius:8px; z-index:100001; font-weight:700;';
@@ -292,7 +292,7 @@ async function handleLockDirect(id, days) {
 
 async function handleUnlock(id, correctPin) {
     const inputPin = prompt("Ingresa el PIN de desbloqueo para liberar esta cuenta:");
-    
+
     if (inputPin === null) return; // Cancelado
     if (inputPin !== correctPin) {
         alert("🚨 PIN incorrecto. No tienes permiso para liberar esta cuenta.");
@@ -352,7 +352,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (changes[LAST_BLOCK_DATA_KEY] || changes['activeUser']) {
         loadSavedData().then(() => {
             console.log("Blocking Ext: Datos actualizados, re-verificando bloqueo...");
-            currentId = null; 
+            currentId = null;
             init();
         });
     }
