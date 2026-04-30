@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Blocking - Gestión de Usuarios</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --sf-navy:      #0B1F3A;
+            --sf-blue:      #0176D3;
+            --sf-blue-dark: #014486;
+            --sf-teal:      #06A59A;
+            --sf-green:     #2E844A;
+            --sf-red:       #BA0517;
+            --sf-red-light: #FCDBD9;
+            --sf-gold:      #FFB75D;
+            --sf-surface:   #F3F3F3;
+            --sf-border:    #DDDBDA;
+            --sf-text:      #181818;
+            --sf-muted:     #706E6B;
+            --sf-white:     #FFFFFF;
+            --radius:       6px;
+            --transition:   0.18s cubic-bezier(.4,0,.2,1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            width: 400px;
+            min-height: 200px;
+            font-family: 'IBM Plex Sans', sans-serif;
+            background: var(--sf-surface);
+            color: var(--sf-text);
+            font-size: 13px;
+        }
+
+        /* ── HEADER ── */
+        .header {
+            background: var(--sf-navy);
+            padding: 14px 18px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+        }
+        .header-logo {
+            width: 28px; height: 28px;
+            background: var(--sf-blue);
+            border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px;
+        }
+        .header-text h1 {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--sf-white);
+            letter-spacing: 0.3px;
+        }
+        .header-text p {
+            font-size: 10px;
+            color: #8aaccc;
+            font-family: 'IBM Plex Mono', monospace;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .header-badge {
+            margin-left: auto;
+            background: var(--sf-teal);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 20px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        /* ── TABS ── */
+        .tabs {
+            display: flex;
+            background: var(--sf-white);
+            border-bottom: 2px solid var(--sf-border);
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 10px 8px;
+            border: none;
+            background: transparent;
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--sf-muted);
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: color var(--transition), border-color var(--transition);
+            letter-spacing: 0.2px;
+        }
+        .tab-btn.active {
+            color: var(--sf-blue);
+            border-bottom-color: var(--sf-blue);
+        }
+        .tab-btn:hover:not(.active) {
+            color: var(--sf-text);
+            background: var(--sf-surface);
+        }
+
+        /* ── TAB PANELS ── */
+        .tab-panel { display: none; padding: 18px; }
+        .tab-panel.active { display: block; }
+
+        /* ── FORM ── */
+        .form-section-title {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--sf-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--sf-border);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .form-grid.single { grid-template-columns: 1fr; }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .field.full { grid-column: 1 / -1; }
+
+        .field label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--sf-muted);
+            letter-spacing: 0.3px;
+        }
+        .field label .required {
+            color: var(--sf-red);
+            margin-left: 2px;
+        }
+
+        .field input, .field select {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1.5px solid var(--sf-border);
+            border-radius: var(--radius);
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 13px;
+            color: var(--sf-text);
+            background: var(--sf-white);
+            transition: border-color var(--transition), box-shadow var(--transition);
+            outline: none;
+        }
+        .field input:focus, .field select:focus {
+            border-color: var(--sf-blue);
+            box-shadow: 0 0 0 3px rgba(1,118,211,0.12);
+        }
+        .field input::placeholder { color: #b0aeac; }
+
+        /* Pin field — mono font */
+        .field input[type="password"].pin-input {
+            font-family: 'IBM Plex Mono', monospace;
+            letter-spacing: 4px;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        .field input.error { border-color: var(--sf-red); }
+        .field-hint {
+            font-size: 10px;
+            color: var(--sf-muted);
+            margin-top: 1px;
+        }
+
+        /* password strength */
+        .strength-bar {
+            height: 3px;
+            border-radius: 2px;
+            background: var(--sf-border);
+            margin-top: 4px;
+            overflow: hidden;
+        }
+        .strength-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 2px;
+            transition: width 0.3s ease, background 0.3s ease;
+        }
+
+        /* ── BUTTONS ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 9px 16px;
+            border: none;
+            border-radius: var(--radius);
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition);
+            letter-spacing: 0.2px;
+        }
+        .btn-primary {
+            background: var(--sf-blue);
+            color: #fff;
+            width: 100%;
+            margin-top: 14px;
+            padding: 11px;
+        }
+        .btn-primary:hover { background: var(--sf-blue-dark); }
+        .btn-primary:active { transform: scale(0.98); }
+        .btn-primary:disabled {
+            background: var(--sf-border);
+            color: var(--sf-muted);
+            cursor: not-allowed;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--sf-blue);
+            border: 1.5px solid var(--sf-blue);
+            padding: 7px 14px;
+            font-size: 12px;
+        }
+        .btn-ghost:hover { background: rgba(1,118,211,0.06); }
+
+        /* ── ALERT ── */
+        .alert {
+            padding: 9px 12px;
+            border-radius: var(--radius);
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            display: none;
+            align-items: flex-start;
+            gap: 8px;
+            line-height: 1.4;
+        }
+        .alert.show { display: flex; }
+        .alert-error   { background: var(--sf-red-light); color: var(--sf-red); border-left: 3px solid var(--sf-red); }
+        .alert-success { background: #EEF7EE; color: var(--sf-green); border-left: 3px solid var(--sf-green); }
+        .alert-info    { background: #EEF4FF; color: var(--sf-blue); border-left: 3px solid var(--sf-blue); }
+
+        /* ── USERS LIST ── */
+        .users-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+        .users-header h2 {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--sf-navy);
+        }
+        .users-count {
+            background: var(--sf-navy);
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+
+        .search-box {
+            position: relative;
+            margin-bottom: 12px;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 8px 10px 8px 32px;
+            border: 1.5px solid var(--sf-border);
+            border-radius: var(--radius);
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 12px;
+            background: var(--sf-white);
+            outline: none;
+            transition: border-color var(--transition);
+        }
+        .search-box input:focus { border-color: var(--sf-blue); }
+        .search-icon {
+            position: absolute;
+            left: 10px; top: 50%;
+            transform: translateY(-50%);
+            font-size: 13px;
+            pointer-events: none;
+        }
+
+        .user-card {
+            background: var(--sf-white);
+            border: 1.5px solid var(--sf-border);
+            border-radius: var(--radius);
+            padding: 11px 13px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            transition: border-color var(--transition), box-shadow var(--transition);
+        }
+        .user-card:hover {
+            border-color: var(--sf-blue);
+            box-shadow: 0 2px 8px rgba(1,118,211,0.1);
+        }
+
+        .user-avatar {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            flex-shrink: 0;
+            color: #fff;
+        }
+
+        .user-info { flex: 1; min-width: 0; }
+        .user-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--sf-navy);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .user-meta {
+            font-size: 11px;
+            color: var(--sf-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .user-area {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 20px;
+            background: #EEF4FF;
+            color: var(--sf-blue);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 30px 20px;
+            color: var(--sf-muted);
+        }
+        .empty-state .empty-icon { font-size: 32px; margin-bottom: 8px; }
+        .empty-state p { font-size: 12px; line-height: 1.5; }
+
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: var(--sf-muted);
+            font-size: 12px;
+        }
+        .loading-spinner.show { display: block; }
+
+        /* ── DIVIDER ── */
+        .divider {
+            height: 1px;
+            background: var(--sf-border);
+            margin: 14px 0;
+        }
+
+        /* ── FOOTER ── */
+        .popup-footer {
+            padding: 8px 18px;
+            background: var(--sf-white);
+            border-top: 1px solid var(--sf-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .footer-version {
+            font-size: 10px;
+            color: var(--sf-muted);
+            font-family: 'IBM Plex Mono', monospace;
+        }
+        .footer-status {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--sf-green);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .footer-status::before {
+            content: '';
+            width: 6px; height: 6px;
+            background: var(--sf-green);
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Scrollbar */
+        .users-list-scroll {
+            max-height: 280px;
+            overflow-y: auto;
+            padding-right: 2px;
+        }
+        .users-list-scroll::-webkit-scrollbar { width: 4px; }
+        .users-list-scroll::-webkit-scrollbar-track { background: transparent; }
+        .users-list-scroll::-webkit-scrollbar-thumb { background: var(--sf-border); border-radius: 4px; }
+
+        /* Spinner animation */
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spin { display: inline-block; animation: spin 1s linear infinite; }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-logo">🔒</div>
+        <div class="header-text">
+            <h1>Account Blocking</h1>
+            <p>Salesforce TMO · Control Panel</p>
+        </div>
+        <span class="header-badge">v1.1</span>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="create">➕ Crear Usuario</button>
+        <button class="tab-btn" data-tab="list">👥 Usuarios</button>
+    </div>
+
+    <!-- TAB: CREAR USUARIO -->
+    <div id="tab-create" class="tab-panel active">
+
+        <div id="alert-create" class="alert"></div>
+
+        <p class="form-section-title">Información de acceso</p>
+        <div class="form-grid">
+            <div class="field">
+                <label>Usuario <span class="required">*</span></label>
+                <input type="text" id="input-username" placeholder="ej. jperez" autocomplete="off">
+            </div>
+            <div class="field">
+                <label>Correo electrónico <span class="required">*</span></label>
+                <input type="email" id="input-email" placeholder="ej. juan@tmo.com">
+            </div>
+        </div>
+
+        <div class="form-grid">
+            <div class="field">
+                <label>Contraseña <span class="required">*</span></label>
+                <input type="password" id="input-password" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+                <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
+                <span class="field-hint" id="strength-text"></span>
+            </div>
+            <div class="field">
+                <label>PIN de desbloqueo <span class="required">*</span></label>
+                <input type="password" id="input-pin" class="pin-input" placeholder="••••" maxlength="6" autocomplete="off">
+                <span class="field-hint">4–6 dígitos numéricos</span>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+        <p class="form-section-title">Información personal</p>
+
+        <div class="form-grid">
+            <div class="field">
+                <label>Nombre completo <span class="required">*</span></label>
+                <input type="text" id="input-nombre" placeholder="ej. Juan Pérez">
+            </div>
+            <div class="field">
+                <label>Área / Equipo <span class="required">*</span></label>
+                <input type="text" id="input-area" placeholder="ej. TMO, Canvas, B2B">
+            </div>
+        </div>
+
+        <button class="btn btn-primary" id="btn-create-user">
+            <span id="btn-create-text">✓ Crear usuario</span>
+        </button>
+
+    </div>
+
+    <!-- TAB: LISTA DE USUARIOS -->
+    <div id="tab-list" class="tab-panel">
+        <div class="users-header">
+            <h2>Usuarios registrados</h2>
+            <span class="users-count" id="users-count">0</span>
+        </div>
+
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-users" placeholder="Buscar por nombre, usuario o área...">
+        </div>
+
+        <div id="loading-users" class="loading-spinner">
+            <span class="spin">⚙️</span> Cargando usuarios...
+        </div>
+
+        <div id="alert-list" class="alert"></div>
+
+        <div class="users-list-scroll">
+            <div id="users-list"></div>
+        </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="popup-footer">
+        <span class="footer-version">SalesforceTMO · build 1.1.0</span>
+        <span class="footer-status" id="footer-status">Conectado</span>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

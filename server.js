@@ -2,27 +2,24 @@ const express = require('express');
 const admin = require('firebase-admin');
 const cors = require('cors');
 
-// --- 1. Inicialización de Firebase (Usando Variables de Entorno) ---
+// --- 1. Inicialización de Firebase ---
 
-// CRÍTICO: Lee las credenciales JSON de la variable de entorno.
-// Esto es necesario para la seguridad y el despliegue en Render/Heroku.
 try {
-    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
-    if (!serviceAccountJson) {
-        throw new Error("La variable de entorno FIREBASE_SERVICE_ACCOUNT no está configurada.");
-    }
-    const serviceAccount = JSON.parse(serviceAccountJson);
-    
-    // Inicializa la aplicación Firebase
-    admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: "https://salesforcetmo-default-rtdb.firebaseio.com" 
-    });
-    
-    console.log("Firebase inicializado exitosamente.");
+    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (!serviceAccountJson) {
+        throw new Error("La variable de entorno FIREBASE_SERVICE_ACCOUNT no está configurada.");
+    }
+    const serviceAccount = JSON.parse(serviceAccountJson);
+    
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        databaseURL: "https://salesforcetmo-default-rtdb.firebaseio.com"
+    });
+    
+    console.log("Firebase inicializado exitosamente.");
 } catch (e) {
-    console.error("Error al inicializar Firebase:", e.message);
-    process.exit(1); // Detiene la aplicación si la inicialización falla
+    console.error("Error al inicializar Firebase:", e.message);
+    process.exit(1);
 }
 
 const db = admin.database();
@@ -31,106 +28,296 @@ const PORT = process.env.PORT || 3000;
 
 // --- 2. Middlewares ---
 
-// Habilita CORS para que la extensión de Chrome pueda llamar a esta API.
-app.use(cors({
-    origin: '*', 
-    methods: ['GET', 'POST', 'DELETE']
-}));
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'DELETE', 'PUT'] }));
+app.use(express.json());
 
-app.use(express.json()); // Permite a la API leer JSON en el cuerpo de las peticiones
-
-// --- 3. Endpoints de la API REST ---
+// =============================================================
+// ENDPOINTS DE BLOQUEOS (/api/v1/bloqueos)
+// =============================================================
 
 /**
- * [GET] /api/v1/bloqueo_clientes/:clienteId
- * Verifica el estado del bloqueo y aplica la lógica de expiración.
- * RUTA FINAL: /api/v1/bloqueo_clientes/:clienteId
- */
-app.get('/api/v1/bloqueo_clientes/:clienteId', async (req, res) => {
-    const clienteId = req.params.clienteId;
+ * [GET] /api/v1/bloqueos/:clienteId
+ * Verifica el estado del bloqueo y aplica la lógica de expiración.
+ */
+app.get('/api/v1/bloqueos/:clienteId', async (req, res) => {
+    const clienteId = req.params.clienteId;
 
-    try {
-        const snapshot = await db.ref('bloqueos').child(clienteId).once('value');
-        const bloqueo = snapshot.val();
+    try {
+        const snapshot = await db.ref('bloqueos').child(clienteId).once('value');
+        const bloqueo = snapshot.val();
 
-        if (bloqueo) {
-            // Lógica de expiración: Si el tiempo actual es mayor al tiempo de expiración
-            if (bloqueo.tiempo_expiracion > Date.now()) {
-                // El bloqueo es VÁLIDO
-                return res.status(200).json(bloqueo);
-            } else {
-                // Bloqueo EXPIRADO: Lo eliminamos automáticamente
-                await db.ref('bloqueos').child(clienteId).remove();
-                console.log(`Bloqueo expirado y eliminado para ID: ${clienteId}`);
-                // Reportar 404 para indicar que el cliente está libre
-                return res.status(404).json({ message: "Cliente libre (expirado)" });
-            }
-        } else {
-            // No se encontró bloqueo
-            return res.status(404).json({ message: "Cliente libre" });
-        }
-    } catch (error) {
-        console.error("Error al consultar bloqueo:", error);
-        return res.status(500).json({ message: "Error interno del servidor" });
-    }
+        if (bloqueo) {
+            if (bloqueo.tiempo_expiracion > Date.now()) {
+                return res.status(200).json(bloqueo);
+            } else {
+                await db.ref('bloqueos').child(clienteId).remove();
+                console.log(`Bloqueo expirado y eliminado para ID: ${clienteId}`);
+                return res.status(404).json({ message: "Cliente libre (expirado)" });
+            }
+        } else {
+            return res.status(404).json({ message: "Cliente libre" });
+        }
+    } catch (error) {
+        console.error("Error al consultar bloqueo:", error);
+        return res.status(500).json({ message: "Error interno del servidor" });
+    }
 });
 
 /**
- * [POST] /api/v1/bloqueo_clientes
- * Crea un nuevo registro de bloqueo.
- * RUTA FINAL: /api/v1/bloqueo_clientes
- */
-app.post('/api/v1/bloqueo_clientes', async (req, res) => {
-    // duracion_minutos por defecto es 120 minutos (2 horas)
-    const { cliente_id, usuario_nombre, equipo, duracion_minutos = 120 } = req.body;
+ * [POST] /api/v1/bloqueos
+ * Crea un nuevo registro de bloqueo.
+ */
+app.post('/api/v1/bloqueos', async (req, res) => {
+    const { cliente_id, usuario_nombre, equipo, duracion_minutos = 120 } = req.body;
 
-    if (!cliente_id || !usuario_nombre || !equipo) {
-        return res.status(400).json({ message: "Faltan campos obligatorios: cliente_id, usuario_nombre, equipo." });
-    }
+    if (!cliente_id || !usuario_nombre || !equipo) {
+        return res.status(400).json({ message: "Faltan campos obligatorios: cliente_id, usuario_nombre, equipo." });
+    }
 
-    const timestamp_bloqueo = Date.now();
-    // Calcula la expiración: tiempo actual + minutos * 60 segundos * 1000 milisegundos
-    const tiempo_expiracion = timestamp_bloqueo + (duracion_minutos * 60 * 1000);
+    const timestamp_bloqueo = Date.now();
+    const tiempo_expiracion = timestamp_bloqueo + (duracion_minutos * 60 * 1000);
 
-    const nuevoBloqueo = {
-        cliente_id,
-        usuario_nombre,
-        equipo,
-        timestamp_bloqueo,
-        tiempo_expiracion,
-    };
+    const nuevoBloqueo = {
+        cliente_id,
+        usuario_nombre,
+        equipo,
+        timestamp_bloqueo,
+        tiempo_expiracion,
+    };
 
-    try {
-        // Guarda el objeto en la colección 'bloqueos', usando el cliente_id como clave
-        await db.ref('bloqueos').child(cliente_id).set(nuevoBloqueo);
-        return res.status(201).json({ message: "Bloqueo creado exitosamente", bloqueo: nuevoBloqueo });
-    } catch (error) {
-        console.error("Error al crear bloqueo:", error);
-        return res.status(500).json({ message: "Error interno al guardar" });
-    }
+    try {
+        await db.ref('bloqueos').child(cliente_id).set(nuevoBloqueo);
+        return res.status(201).json({ message: "Bloqueo creado exitosamente", bloqueo: nuevoBloqueo });
+    } catch (error) {
+        console.error("Error al crear bloqueo:", error);
+        return res.status(500).json({ message: "Error interno al guardar" });
+    }
 });
 
 /**
- * [DELETE] /api/v1/bloqueo_clientes/:clienteId
- * Elimina el registro de bloqueo (liberación manual).
- * RUTA FINAL: /api/v1/bloqueo_clientes/:clienteId
- */
-app.delete('/api/v1/bloqueo_clientes/:clienteId', async (req, res) => {
-    const clienteId = req.params.clienteId;
+ * [DELETE] /api/v1/bloqueos/:clienteId
+ * Elimina el bloqueo (liberación manual).
+ * Requiere el PIN del usuario en el body: { usuario: "...", pin: "..." }
+ */
+app.delete('/api/v1/bloqueos/:clienteId', async (req, res) => {
+    const clienteId = req.params.clienteId;
+    const { usuario, pin } = req.body || {};
 
-    try {
-        await db.ref('bloqueos').child(clienteId).remove();
-        // 204 No Content indica éxito sin necesidad de devolver un cuerpo de respuesta
-        return res.status(204).send(); 
-    } catch (error) {
-        console.error("Error al eliminar bloqueo:", error);
-        return res.status(500).json({ message: "Error interno al eliminar" });
-    }
+    // Si se envía usuario y PIN, validamos antes de liberar
+    if (usuario && pin) {
+        try {
+            const userSnap = await db.ref('usuarios').child(usuario).once('value');
+            const userData = userSnap.val();
+
+            if (!userData) {
+                return res.status(404).json({ message: "Usuario no encontrado." });
+            }
+
+            if (String(userData.pin) !== String(pin)) {
+                return res.status(401).json({ message: "PIN incorrecto. No se puede liberar la cuenta." });
+            }
+
+            // PIN correcto → liberar
+            await db.ref('bloqueos').child(clienteId).remove();
+            console.log(`Bloqueo liberado por ${usuario} para cliente ${clienteId}`);
+            return res.status(204).send();
+
+        } catch (error) {
+            console.error("Error al validar PIN:", error);
+            return res.status(500).json({ message: "Error interno al validar PIN." });
+        }
+    }
+
+    // Si no se envía PIN (comportamiento legacy / admin), liberar directamente
+    try {
+        await db.ref('bloqueos').child(clienteId).remove();
+        return res.status(204).send();
+    } catch (error) {
+        console.error("Error al eliminar bloqueo:", error);
+        return res.status(500).json({ message: "Error interno al eliminar" });
+    }
+});
+
+
+// =============================================================
+// ENDPOINTS DE USUARIOS (/api/v1/usuarios)
+// =============================================================
+
+/**
+ * [POST] /api/v1/usuarios
+ * Crea un nuevo usuario.
+ * Body: { usuario, correo, password, pin, nombre, area }
+ */
+app.post('/api/v1/usuarios', async (req, res) => {
+    const { usuario, correo, password, pin, nombre, area } = req.body;
+
+    // Validación de campos obligatorios
+    if (!usuario || !correo || !password || !pin || !nombre || !area) {
+        return res.status(400).json({
+            message: "Faltan campos obligatorios: usuario, correo, password, pin, nombre, area."
+        });
+    }
+
+    // Validación de formato de correo
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(correo)) {
+        return res.status(400).json({ message: "El formato del correo electrónico no es válido." });
+    }
+
+    // Validación de contraseña
+    if (String(password).length < 6) {
+        return res.status(400).json({ message: "La contraseña debe tener al menos 6 caracteres." });
+    }
+
+    // Validación de PIN (4-6 dígitos numéricos)
+    if (!/^\d{4,6}$/.test(String(pin))) {
+        return res.status(400).json({ message: "El PIN debe ser numérico y tener entre 4 y 6 dígitos." });
+    }
+
+    try {
+        // Verificar si el usuario ya existe
+        const existing = await db.ref('usuarios').child(usuario).once('value');
+        if (existing.val()) {
+            return res.status(409).json({ message: `El usuario "${usuario}" ya existe.` });
+        }
+
+        const nuevoUsuario = {
+            usuario,
+            correo,
+            password, // En producción considera usar bcrypt para hashear la contraseña
+            pin: String(pin),
+            nombre,
+            area,
+            fecha_creacion: Date.now()
+        };
+
+        await db.ref('usuarios').child(usuario).set(nuevoUsuario);
+        console.log(`Usuario creado: ${usuario}`);
+
+        // Retornar sin password ni pin por seguridad
+        const { password: _pw, pin: _pin, ...publicData } = nuevoUsuario;
+        return res.status(201).json({ message: "Usuario creado exitosamente", usuario: publicData });
+
+    } catch (error) {
+        console.error("Error al crear usuario:", error);
+        return res.status(500).json({ message: "Error interno al guardar usuario." });
+    }
+});
+
+/**
+ * [GET] /api/v1/usuarios
+ * Devuelve la lista de todos los usuarios (sin password ni pin).
+ */
+app.get('/api/v1/usuarios', async (req, res) => {
+    try {
+        const snapshot = await db.ref('usuarios').once('value');
+        const data = snapshot.val();
+
+        if (!data) {
+            return res.status(200).json([]);
+        }
+
+        // Convertir objeto de Firebase a array y filtrar campos sensibles
+        const usuarios = Object.values(data).map(({ password: _pw, pin: _pin, ...user }) => user);
+
+        return res.status(200).json(usuarios);
+
+    } catch (error) {
+        console.error("Error al listar usuarios:", error);
+        return res.status(500).json({ message: "Error interno al obtener usuarios." });
+    }
+});
+
+/**
+ * [GET] /api/v1/usuarios/:usuario
+ * Devuelve un usuario específico (sin password ni pin).
+ */
+app.get('/api/v1/usuarios/:usuario', async (req, res) => {
+    const usuarioId = req.params.usuario;
+
+    try {
+        const snapshot = await db.ref('usuarios').child(usuarioId).once('value');
+        const data = snapshot.val();
+
+        if (!data) {
+            return res.status(404).json({ message: "Usuario no encontrado." });
+        }
+
+        const { password: _pw, pin: _pin, ...publicData } = data;
+        return res.status(200).json(publicData);
+
+    } catch (error) {
+        console.error("Error al obtener usuario:", error);
+        return res.status(500).json({ message: "Error interno." });
+    }
+});
+
+/**
+ * [DELETE] /api/v1/usuarios/:usuario
+ * Elimina un usuario del sistema.
+ */
+app.delete('/api/v1/usuarios/:usuario', async (req, res) => {
+    const usuarioId = req.params.usuario;
+
+    try {
+        const existing = await db.ref('usuarios').child(usuarioId).once('value');
+        if (!existing.val()) {
+            return res.status(404).json({ message: "Usuario no encontrado." });
+        }
+
+        await db.ref('usuarios').child(usuarioId).remove();
+        console.log(`Usuario eliminado: ${usuarioId}`);
+        return res.status(204).send();
+
+    } catch (error) {
+        console.error("Error al eliminar usuario:", error);
+        return res.status(500).json({ message: "Error interno al eliminar usuario." });
+    }
+});
+
+
+// =============================================================
+// ENDPOINT DE VALIDACIÓN DE PIN (/api/v1/usuarios/:usuario/validar-pin)
+// =============================================================
+
+/**
+ * [POST] /api/v1/usuarios/:usuario/validar-pin
+ * Valida el PIN de un usuario sin necesidad de hacer el DELETE.
+ * Body: { pin: "1234" }
+ * Útil para pre-validar antes de liberar.
+ */
+app.post('/api/v1/usuarios/:usuario/validar-pin', async (req, res) => {
+    const usuarioId = req.params.usuario;
+    const { pin } = req.body;
+
+    if (!pin) {
+        return res.status(400).json({ message: "El campo 'pin' es obligatorio." });
+    }
+
+    try {
+        const snapshot = await db.ref('usuarios').child(usuarioId).once('value');
+        const data = snapshot.val();
+
+        if (!data) {
+            return res.status(404).json({ message: "Usuario no encontrado." });
+        }
+
+        const isValid = String(data.pin) === String(pin);
+        if (isValid) {
+            return res.status(200).json({ valid: true, message: "PIN correcto." });
+        } else {
+            return res.status(401).json({ valid: false, message: "PIN incorrecto." });
+        }
+
+    } catch (error) {
+        console.error("Error al validar PIN:", error);
+        return res.status(500).json({ message: "Error interno al validar PIN." });
+    }
 });
 
 
 // --- 4. Inicio del Servidor ---
 
 app.listen(PORT, () => {
-    console.log(`Servidor de API de Bloqueos corriendo en puerto ${PORT}`);
+    console.log(`Servidor de API de Bloqueos corriendo en puerto ${PORT}`);
 });
