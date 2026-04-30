@@ -240,7 +240,7 @@ function createModal(clienteId) {
     header.style.marginBottom = '20px';
     
     const title = document.createElement('h4');
-    title.textContent = '🔒 Confirmar Datos de Bloqueo';
+    title.textContent = '🔒 Duración del Bloqueo';
     title.style.margin = '0';
     title.style.color = '#061C3F';
     title.style.fontSize = '18px';
@@ -258,22 +258,10 @@ function createModal(clienteId) {
     header.appendChild(closeButton);
     dialog.appendChild(header);
 
-    // 5.2.2. Inputs (Usando los valores cargados/por defecto)
-    const inputUser = createStyledInput(
-        `${MODAL_ID}-user`, 
-        'Analista', 
-        USER_DATA.usuario_nombre,
-        'text'
-    );
-    const inputTeam = createStyledInput(
-        `${MODAL_ID}-team`, 
-        'Frente de pruebas', 
-        USER_DATA.equipo,
-        'text'
-    );
+    // 5.2.2. Input de Días de Bloqueo
     const inputDays = createStyledInput(
         `${MODAL_ID}-days`, 
-        'Dias de bloqueo', 
+        'Días de bloqueo', 
         DEFAULT_BLOCK_DAYS,
         'number'
     );
@@ -283,8 +271,6 @@ function createModal(clienteId) {
     daysInput.min = 1;
     daysInput.max = 365;
     
-    dialog.appendChild(inputUser);
-    dialog.appendChild(inputTeam);
     dialog.appendChild(inputDays);
 
     // 5.2.3. Área de Error y Botón de Acción
@@ -423,14 +409,18 @@ function renderLoading(message) {
 // --- 7. Handlers de Acción ---
 
 async function handleLock(clienteId) {
-    const usuarioNombre = document.getElementById(`${MODAL_ID}-user`).value.trim();
-    const equipoNombre = document.getElementById(`${MODAL_ID}-team`).value.trim();
     const blockDays = parseInt(document.getElementById(`${MODAL_ID}-days`).value.trim());
     
-    if (!usuarioNombre || !equipoNombre || isNaN(blockDays)) return;
+    if (isNaN(blockDays) || blockDays <= 0 || blockDays > 365) {
+        const errorDiv = document.getElementById(`${MODAL_ID}-error`);
+        if (errorDiv) errorDiv.textContent = "Error: La duración debe ser un número válido de días (1-365).";
+        return;
+    }
 
-    USER_DATA.usuario_nombre = usuarioNombre;
-    USER_DATA.equipo = equipoNombre;
+    // Usar los valores por defecto guardados en memoria
+    const usuarioNombre = USER_DATA.usuario_nombre;
+    const equipoNombre = USER_DATA.equipo;
+    
     DEFAULT_BLOCK_DAYS = blockDays;
     saveLastBlockData(usuarioNombre, equipoNombre, blockDays);
 
@@ -445,7 +435,11 @@ async function handleLock(clienteId) {
             equipo: equipoNombre,
             duracion_minutos: duracionMinutos 
         });
-        if (response.status === 201) renderUI(clienteId, response.data.bloqueo);
+        if (response.status === 201) {
+            renderUI(clienteId, response.data.bloqueo);
+            // Mostrar overlay de bloqueo
+            showBlockOverlay(clienteId);
+        }
     } catch (error) {
         console.error(error);
     }
@@ -489,6 +483,61 @@ function renderLoading(message) {
 }
 
 /**
+ * Muestra un overlay transparente sobre la cuenta bloqueada para evitar clics.
+ */
+function showBlockOverlay(clienteId) {
+    const OVERLAY_ID = 'blocking-ext-overlay';
+    
+    // Verificar si ya existe
+    let overlay = document.getElementById(OVERLAY_ID);
+    if (overlay) return;
+    
+    // Crear el overlay
+    overlay = document.createElement('div');
+    overlay.id = OVERLAY_ID;
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.style.backgroundColor = 'rgba(255, 0, 0, 0.15)'; // Rojo transparente
+    overlay.style.zIndex = '99990'; // Por debajo del panel de la extensión
+    overlay.style.pointerEvents = 'auto'; // Capturar todos los clics
+    overlay.style.cursor = 'not-allowed';
+    
+    // Mensaje de bloqueo
+    const messageDiv = document.createElement('div');
+    messageDiv.style.position = 'absolute';
+    messageDiv.style.top = '50%';
+    messageDiv.style.left = '50%';
+    messageDiv.style.transform = 'translate(-50%, -50%)';
+    messageDiv.style.backgroundColor = 'rgba(201, 56, 56, 0.95)';
+    messageDiv.style.color = 'white';
+    messageDiv.style.padding = '20px 30px';
+    messageDiv.style.borderRadius = '10px';
+    messageDiv.style.fontSize = '18px';
+    messageDiv.style.fontWeight = 'bold';
+    messageDiv.style.textAlign = 'center';
+    messageDiv.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3)';
+    messageDiv.innerHTML = '🔒 CUENTA BLOQUEADA<br><span style="font-size: 14px; font-weight: normal;">No puedes realizar acciones</span>';
+    
+    overlay.appendChild(messageDiv);
+    document.body.appendChild(overlay);
+    
+    console.log("Blocking Ext: Overlay de bloqueo mostrado para cliente:", clienteId);
+}
+
+/**
+ * Oculta el overlay de bloqueo.
+ */
+function hideBlockOverlay() {
+    const overlay = document.getElementById('blocking-ext-overlay');
+    if (overlay) {
+        overlay.remove();
+    }
+}
+
+/**
  * Muestra un mensaje de error dentro del panel principal.
  */
 function renderError(message) {
@@ -509,37 +558,26 @@ function renderError(message) {
 
 // --- 7. Handlers de Acción (Bloquear / Liberar) ---
 
-
-
 async function handleLock(clienteId) {
     // 1. Leer y validar campos del MODAL
     const errorDiv = document.getElementById(`${MODAL_ID}-error`);
     if (errorDiv) errorDiv.textContent = ''; 
 
-    const inputUser = document.getElementById(`${MODAL_ID}-user`);
-    const inputTeam = document.getElementById(`${MODAL_ID}-team`);
     const inputDays = document.getElementById(`${MODAL_ID}-days`);
-    
-    const usuarioNombre = inputUser ? inputUser.value.trim() : '';
-    const equipoNombre = inputTeam ? inputTeam.value.trim() : '';
     const blockDays = inputDays ? parseInt(inputDays.value.trim()) : 0;
     
     // Validación de campos
-    if (!usuarioNombre || !equipoNombre) {
-        if (errorDiv) errorDiv.textContent = "Error: Usuario y Equipo son obligatorios.";
-        return;
-    }
     if (isNaN(blockDays) || blockDays <= 0 || blockDays > 365) {
         if (errorDiv) errorDiv.textContent = "Error: La duración debe ser un número válido de días (1-365).";
         return;
     }
 
-    // 2. Guardar los datos actuales en memoria (para el estado de la sesión)
-    USER_DATA.usuario_nombre = usuarioNombre;
-    USER_DATA.equipo = equipoNombre;
-    DEFAULT_BLOCK_DAYS = blockDays;
+    // Usar los valores por defecto guardados en memoria
+    const usuarioNombre = USER_DATA.usuario_nombre;
+    const equipoNombre = USER_DATA.equipo;
     
-    // 3. Guardar los datos en el almacenamiento persistente (chrome.storage)
+    // Guardar los datos actuales en memoria (para el estado de la sesión)
+    DEFAULT_BLOCK_DAYS = blockDays;
     saveLastBlockData(usuarioNombre, equipoNombre, blockDays);
 
     // Calcular duración en minutos
@@ -562,6 +600,8 @@ async function handleLock(clienteId) {
         if (response.status === 201) {
             console.log("Bloqueo creado exitosamente:", response.data.bloqueo);
             renderUI(clienteId, response.data.bloqueo);
+            // Mostrar overlay de bloqueo
+            showBlockOverlay(clienteId);
         } else if (response.status === 400) {
             console.error("Error de validación al bloquear:", response.data.message);
             renderError("Error de validación: " + response.data.message); 
@@ -588,6 +628,8 @@ async function handleUnlock(clienteId) {
         if (response.status === 204 || response.status === 404) {
             console.log("Bloqueo eliminado exitosamente.");
             renderUI(clienteId, null); 
+            // Ocultar overlay de bloqueo
+            hideBlockOverlay();
         } else {
             console.error("Error al eliminar bloqueo. Status:", response.status);
             renderError("No se pudo liberar el bloqueo.");
