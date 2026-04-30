@@ -236,6 +236,40 @@ app.post('/api/v1/usuarios', async (req, res) => {
 });
 
 /**
+ * [POST] /api/v1/usuarios/login
+ * Valida credenciales de usuario.
+ * Body: { usuario, password }
+ */
+app.post('/api/v1/usuarios/login', async (req, res) => {
+    const { usuario, password } = req.body;
+
+    if (!usuario || !password) {
+        return res.status(400).json({ message: "Usuario y contraseña son requeridos." });
+    }
+
+    try {
+        const snapshot = await db.ref('usuarios').child(usuario).once('value');
+        const user = snapshot.val();
+
+        if (!user) {
+            return res.status(404).json({ message: "Usuario no encontrado." });
+        }
+
+        if (user.password !== password) {
+            return res.status(401).json({ message: "Contraseña incorrecta." });
+        }
+
+        // Retornar datos del usuario (sin password)
+        const { password: _pw, ...userData } = user;
+        return res.status(200).json({ message: "Login exitoso", usuario: userData });
+
+    } catch (error) {
+        console.error("Error en login:", error);
+        return res.status(500).json({ message: "Error interno en el servidor." });
+    }
+});
+
+/**
  * [GET] /api/v1/usuarios
  * Devuelve la lista de todos los usuarios (sin password ni pin).
  */

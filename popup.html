@@ -435,12 +435,37 @@
 
     <!-- TABS -->
     <div class="tabs">
-        <button class="tab-btn active" data-tab="create">➕ Crear Usuario</button>
+        <button class="tab-btn active" data-tab="login">🔑 Login</button>
+        <button class="tab-btn" data-tab="create">➕ Crear</button>
         <button class="tab-btn" data-tab="list">👥 Usuarios</button>
     </div>
 
+    <!-- TAB: LOGIN -->
+    <div id="tab-login" class="tab-panel active">
+        <div id="alert-login" class="alert"></div>
+        <div class="form-grid single">
+            <div class="field">
+                <label>Usuario</label>
+                <input type="text" id="login-username" placeholder="Tu usuario">
+            </div>
+            <div class="field">
+                <label>Contraseña</label>
+                <input type="password" id="login-password" placeholder="••••••••">
+            </div>
+        </div>
+        <button class="btn btn-primary" id="btn-login">
+            <span id="btn-login-text">Entrar</span>
+        </button>
+        
+        <div id="logged-user-info" style="display:none; margin-top:15px; padding:10px; background:#eef4ff; border-radius:6px; border:1px solid #d0e1ff;">
+            <p style="font-weight:700; color:#0176d3; margin-bottom:4px;">Sesión Activa:</p>
+            <p id="active-user-name" style="font-size:12px; margin:0;"></p>
+            <p id="active-user-area" style="font-size:11px; color:#555; margin:0;"></p>
+        </div>
+    </div>
+
     <!-- TAB: CREAR USUARIO -->
-    <div id="tab-create" class="tab-panel active">
+    <div id="tab-create" class="tab-panel">
 
         <div id="alert-create" class="alert"></div>
 

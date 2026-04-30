@@ -673,6 +673,7 @@ async function initializeExtension() {
         if (panel) panel.remove();
         const container = document.getElementById(UI_CONTAINER_ID);
         if (container) container.style.display = 'none';
+        hideBlockOverlay(); // Asegurarse de quitar el bloqueo si salimos de una cuenta
         return;
     }
 
@@ -724,3 +725,11 @@ new MutationObserver(() => {
         initializeExtension();
     }
 }).observe(document, { subtree: true, childList: true });
+
+// Sincronizar datos si cambian en el popup (Login)
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes[LAST_BLOCK_DATA_KEY]) {
+        console.log("Blocking Ext: Datos de usuario actualizados desde almacenamiento.");
+        loadSavedData();
+    }
+});

@@ -164,6 +164,71 @@ async function handleCreateUser() {
     }
 }
 
+// ── LOGIN ────────────────────────────────────────────────────
+
+async function handleLogin() {
+    hideAlert('alert-login');
+    const usuario = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+
+    if (!usuario || !password) {
+        showAlert('alert-login', '⚠ Usuario y contraseña requeridos.', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btn-login');
+    btn.disabled = true;
+    document.getElementById('btn-login-text').textContent = '⌛ Verificando...';
+
+    try {
+        const res = await apiRequest(`${API_BASE}/usuarios/login`, 'POST', { usuario, password });
+        if (res.status === 200) {
+            const userData = res.data.usuario;
+            // Guardar en sesión (persiste hasta que se cierre el navegador)
+            chrome.storage.session.set({ 'activeUser': userData }, () => {
+                // También actualizar lastBlockData para el content script (local para persistencia de campos)
+                const lastBlockUpdate = {
+                    usuario_nombre: userData.nombre,
+                    equipo: userData.area,
+                    usuario_correo: userData.correo,
+                    pin: userData.pin
+                };
+                chrome.storage.local.set({ 'lastBlockData': lastBlockUpdate }, () => {
+                    showAlert('alert-login', `✅ Bienvenido, ${userData.nombre}`, 'success');
+                    updateLoginView(userData);
+                });
+            });
+        } else {
+            showAlert('alert-login', `❌ ${res.data.message || 'Error de login'}`, 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showAlert('alert-login', '🚨 Error de conexión.', 'error');
+    } finally {
+        btn.disabled = false;
+        document.getElementById('btn-login-text').textContent = 'Entrar';
+    }
+}
+
+function updateLoginView(user) {
+    const infoDiv = document.getElementById('logged-user-info');
+    if (user) {
+        infoDiv.style.display = 'block';
+        document.getElementById('active-user-name').textContent = user.nombre;
+        document.getElementById('active-user-area').textContent = user.area;
+    } else {
+        infoDiv.style.display = 'none';
+    }
+}
+
+async function checkSession() {
+    chrome.storage.session.get('activeUser', (result) => {
+        if (result.activeUser) {
+            updateLoginView(result.activeUser);
+        }
+    });
+}
+
 function clearForm() {
     ['input-username','input-email','input-password','input-pin','input-nombre','input-area']
         .forEach(id => { document.getElementById(id).value = ''; });
@@ -232,7 +297,6 @@ function renderUsers(users) {
             </div>
             <div style="display:flex; flex-direction:column; gap:5px; align-items:flex-end;">
                 <span class="user-area">${escapeHtml(user.area)}</span>
-                <button class="btn btn-ghost btn-select" style="padding: 3px 8px; font-size: 10px; height:auto; width:auto;">Seleccionar</button>
             </div>
         `;
         
@@ -243,29 +307,6 @@ function renderUsers(users) {
         };
         
         list.appendChild(card);
-    });
-}
-
-function handleSelectUser(user) {
-    const dataToSave = {
-        usuario_nombre: user.nombre,
-        equipo: user.area,
-        usuario_correo: user.correo,
-        pin: user.pin
-    };
-    
-    chrome.storage.local.get('lastBlockData', (result) => {
-        const existing = result['lastBlockData'] || {};
-        const finalData = { ...existing, ...dataToSave };
-        
-        chrome.storage.local.set({ 'lastBlockData': finalData }, () => {
-            if (chrome.runtime.lastError) {
-                showAlert('alert-list', '❌ Error al guardar selección.', 'error');
-            } else {
-                showAlert('alert-list', `✅ Usuario "${user.nombre}" seleccionado.`, 'success');
-                // Opcional: Cerrar popup o cambiar pestaña
-            }
-        });
     });
 }
 
@@ -318,6 +359,10 @@ function initTabs() {
 
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
+    checkSession();
+
+    // Botón login
+    document.getElementById('btn-login').addEventListener('click', handleLogin);
 
     // Botón crear usuario
     document.getElementById('btn-create-user').addEventListener('click', handleCreateUser);
