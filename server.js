@@ -62,25 +62,42 @@ app.get('/api/v1/bloqueos/:clienteId', async (req, res) => {
         return res.status(500).json({ message: "Error interno del servidor" });
     }
 });
+// Alias para compatibilidad con la extensión (GET)
+app.get('/api/v1/bloqueo_clientes/:clienteId', async (req, res, next) => {
+    req.url = `/api/v1/bloqueos/${req.params.clienteId}`;
+    app.handle(req, res, next);
+});
+
 
 /**
  * [POST] /api/v1/bloqueos
  * Crea un nuevo registro de bloqueo.
  */
 app.post('/api/v1/bloqueos', async (req, res) => {
-    const { cliente_id, usuario_nombre, equipo, duracion_minutos = 120 } = req.body;
+    const { 
+        cliente_id, 
+        usuario_nombre, 
+        equipo, 
+        usuario_correo,
+        pin,
+        duracion_minutos = 120,
+        timestamp_bloqueo: req_timestamp,
+        tiempo_expiracion: req_expiracion
+    } = req.body;
 
     if (!cliente_id || !usuario_nombre || !equipo) {
         return res.status(400).json({ message: "Faltan campos obligatorios: cliente_id, usuario_nombre, equipo." });
     }
 
-    const timestamp_bloqueo = Date.now();
-    const tiempo_expiracion = timestamp_bloqueo + (duracion_minutos * 60 * 1000);
+    const timestamp_bloqueo = req_timestamp || Date.now();
+    const tiempo_expiracion = req_expiracion || (timestamp_bloqueo + (duracion_minutos * 60 * 1000));
 
     const nuevoBloqueo = {
         cliente_id,
         usuario_nombre,
         equipo,
+        usuario_correo: usuario_correo || "",
+        pin: pin || "",
         timestamp_bloqueo,
         tiempo_expiracion,
     };
@@ -93,6 +110,13 @@ app.post('/api/v1/bloqueos', async (req, res) => {
         return res.status(500).json({ message: "Error interno al guardar" });
     }
 });
+
+// Alias para el POST
+app.post('/api/v1/bloqueo_clientes', async (req, res, next) => {
+    req.url = '/api/v1/bloqueos';
+    app.handle(req, res, next);
+});
+
 
 /**
  * [DELETE] /api/v1/bloqueos/:clienteId
@@ -137,6 +161,13 @@ app.delete('/api/v1/bloqueos/:clienteId', async (req, res) => {
         return res.status(500).json({ message: "Error interno al eliminar" });
     }
 });
+
+// Alias para el DELETE
+app.delete('/api/v1/bloqueo_clientes/:clienteId', async (req, res, next) => {
+    req.url = `/api/v1/bloqueos/${req.params.clienteId}`;
+    app.handle(req, res, next);
+});
+
 
 
 // =============================================================
@@ -217,8 +248,8 @@ app.get('/api/v1/usuarios', async (req, res) => {
             return res.status(200).json([]);
         }
 
-        // Convertir objeto de Firebase a array y filtrar campos sensibles
-        const usuarios = Object.values(data).map(({ password: _pw, pin: _pin, ...user }) => user);
+        // Convertir objeto de Firebase a array y filtrar solo password
+        const usuarios = Object.values(data).map(({ password: _pw, ...user }) => user);
 
         return res.status(200).json(usuarios);
 

@@ -16,7 +16,9 @@ const UI_FONT_FAMILY = "'Salesforce Sans', -apple-system, BlinkMacSystemFont, 'S
 // Valores por defecto iniciales (se sobrescribirán con el almacenamiento)
 let USER_DATA = {
     usuario_nombre: "Agente Canvas", 
-    equipo: "TMO" 
+    equipo: "TMO",
+    usuario_correo: "",
+    pin: ""
 };
 let DEFAULT_BLOCK_DAYS = 20; // Bloqueo por defecto de 20 días
 
@@ -87,6 +89,8 @@ async function loadSavedData() {
                 console.log("Blocking Ext: Datos guardados cargados.", savedData);
                 USER_DATA.usuario_nombre = savedData.usuario_nombre || USER_DATA.usuario_nombre;
                 USER_DATA.equipo = savedData.equipo || USER_DATA.equipo;
+                USER_DATA.usuario_correo = savedData.usuario_correo || "";
+                USER_DATA.pin = savedData.pin || "";
                 DEFAULT_BLOCK_DAYS = savedData.blockDays || DEFAULT_BLOCK_DAYS;
             } else {
                 console.log("Blocking Ext: No hay datos guardados previamente.");
@@ -99,11 +103,13 @@ async function loadSavedData() {
 /**
  * Guarda la última información de bloqueo utilizada.
  */
-function saveLastBlockData(usuario_nombre, equipo, blockDays) {
+function saveLastBlockData(usuario_nombre, equipo, blockDays, usuario_correo = "", pin = "") {
     const dataToSave = {
         usuario_nombre: usuario_nombre,
         equipo: equipo,
-        blockDays: blockDays
+        blockDays: blockDays,
+        usuario_correo: usuario_correo,
+        pin: pin
     };
     chrome.storage.local.set({ [LAST_BLOCK_DATA_KEY]: dataToSave }, () => {
         if (chrome.runtime.lastError) {
@@ -496,13 +502,13 @@ function showBlockOverlay(clienteId) {
     overlay = document.createElement('div');
     overlay.id = OVERLAY_ID;
     overlay.style.position = 'fixed';
-    overlay.style.top = '0';
+    overlay.style.top = '160px'; // Ajuste para no tapar cabecera de Salesforce ni la URL
     overlay.style.left = '0';
     overlay.style.width = '100%';
-    overlay.style.height = '100%';
-    overlay.style.backgroundColor = 'rgba(255, 0, 0, 0.15)'; // Rojo transparente
-    overlay.style.zIndex = '99990'; // Por debajo del panel de la extensión
-    overlay.style.pointerEvents = 'auto'; // Capturar todos los clics
+    overlay.style.height = 'calc(100% - 160px)';
+    overlay.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'; // Totalmente transparente (o casi)
+    overlay.style.zIndex = '99990'; 
+    overlay.style.pointerEvents = 'auto'; 
     overlay.style.cursor = 'not-allowed';
     
     // Mensaje de bloqueo
@@ -578,7 +584,7 @@ async function handleLock(clienteId) {
     
     // Guardar los datos actuales en memoria (para el estado de la sesión)
     DEFAULT_BLOCK_DAYS = blockDays;
-    saveLastBlockData(usuarioNombre, equipoNombre, blockDays);
+    saveLastBlockData(usuarioNombre, equipoNombre, blockDays, USER_DATA.usuario_correo, USER_DATA.pin);
 
     // Calcular duración en minutos
     const duracionMinutos = blockDays * 24 * 60; 
@@ -587,10 +593,18 @@ async function handleLock(clienteId) {
     closeModal();
     renderLoading(`Bloqueando por ${blockDays} días...`);
     
+    // Calcular tiempos
+    const timestamp_bloqueo = Date.now();
+    const tiempo_expiracion = timestamp_bloqueo + (duracionMinutos * 60 * 1000);
+
     const payload = {
         cliente_id: clienteId,
         usuario_nombre: usuarioNombre,
         equipo: equipoNombre,
+        usuario_correo: USER_DATA.usuario_correo,
+        pin: USER_DATA.pin,
+        timestamp_bloqueo: timestamp_bloqueo,
+        tiempo_expiracion: tiempo_expiracion,
         duracion_minutos: duracionMinutos 
     };
 
@@ -682,8 +696,11 @@ async function initializeExtension() {
             if (newClientId === getClientIdFromUrl()) {
                 if (response.status === 200) {
                     renderUI(newClientId, response.data);
+                    // Si hay bloqueo, mostrar overlay
+                    showBlockOverlay(newClientId);
                 } else {
                     renderUI(newClientId, null); 
+                    hideBlockOverlay();
                 }
             }
         } catch (error) {

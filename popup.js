@@ -230,9 +230,42 @@ function renderUsers(users) {
                 <div class="user-name">${escapeHtml(user.nombre)}</div>
                 <div class="user-meta">@${escapeHtml(user.usuario)} · ${escapeHtml(user.correo)}</div>
             </div>
-            <span class="user-area">${escapeHtml(user.area)}</span>
+            <div style="display:flex; flex-direction:column; gap:5px; align-items:flex-end;">
+                <span class="user-area">${escapeHtml(user.area)}</span>
+                <button class="btn btn-ghost btn-select" style="padding: 3px 8px; font-size: 10px; height:auto; width:auto;">Seleccionar</button>
+            </div>
         `;
+        
+        const selectBtn = card.querySelector('.btn-select');
+        selectBtn.onclick = (e) => {
+            e.preventDefault();
+            handleSelectUser(user);
+        };
+        
         list.appendChild(card);
+    });
+}
+
+function handleSelectUser(user) {
+    const dataToSave = {
+        usuario_nombre: user.nombre,
+        equipo: user.area,
+        usuario_correo: user.correo,
+        pin: user.pin
+    };
+    
+    chrome.storage.local.get('lastBlockData', (result) => {
+        const existing = result['lastBlockData'] || {};
+        const finalData = { ...existing, ...dataToSave };
+        
+        chrome.storage.local.set({ 'lastBlockData': finalData }, () => {
+            if (chrome.runtime.lastError) {
+                showAlert('alert-list', '❌ Error al guardar selección.', 'error');
+            } else {
+                showAlert('alert-list', `✅ Usuario "${user.nombre}" seleccionado.`, 'success');
+                // Opcional: Cerrar popup o cambiar pestaña
+            }
+        });
     });
 }
 
