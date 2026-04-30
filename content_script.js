@@ -97,12 +97,28 @@ function sendMessageToServiceWorker(urlSegment, method, data = null) {
 
 async function loadSavedData() {
     return new Promise((resolve) => {
+        // 1. Cargar preferencias visuales (local)
         chrome.storage.local.get(LAST_BLOCK_DATA_KEY, (result) => {
             if (result[LAST_BLOCK_DATA_KEY]) {
                 USER_DATA = { ...USER_DATA, ...result[LAST_BLOCK_DATA_KEY] };
                 DEFAULT_BLOCK_DAYS = result[LAST_BLOCK_DATA_KEY].blockDays || 20;
             }
-            resolve();
+            
+            // 2. Cargar identidad real de la sesión (session)
+            // Esto es crucial para evitar que datos viejos en 'local' permitan el bypass.
+            chrome.storage.session.get('activeUser', (res) => {
+                if (res.activeUser) {
+                    console.log("Blocking Ext: Sesión activa detectada para:", res.activeUser.correo);
+                    USER_DATA.usuario_correo = res.activeUser.correo;
+                    USER_DATA.usuario_nombre = res.activeUser.nombre;
+                    USER_DATA.equipo = res.activeUser.area;
+                    USER_DATA.pin = res.activeUser.pin;
+                } else {
+                    console.log("Blocking Ext: No hay sesión activa.");
+                    USER_DATA.usuario_correo = ""; // Limpiar identidad si no hay sesión
+                }
+                resolve();
+            });
         });
     });
 }
@@ -312,10 +328,14 @@ async function init() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[LAST_BLOCK_DATA_KEY]) loadSavedData().then(() => {
-        // Forzar re-verificación si el usuario cambió
-        currentId = null; init();
-    });
+    // Escuchar cambios tanto en local (preferencias) como en session (identidad)
+    if (changes[LAST_BLOCK_DATA_KEY] || changes['activeUser']) {
+        loadSavedData().then(() => {
+            console.log("Blocking Ext: Datos actualizados, re-verificando bloqueo...");
+            currentId = null; 
+            init();
+        });
+    }
 });
 
 init();

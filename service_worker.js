@@ -9,6 +9,9 @@
 // La nueva URL de colección para POST será: https://salesforcetmo.onrender.com/api/v1/bloqueo_clientes
 const API_BASE_URL = "https://salesforcetmo.onrender.com/api/v1/bloqueo_clientes";
 
+// Configurar acceso a storage.session para scripts de contenido
+chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
+
 /**
  * Función genérica para manejar las peticiones a la API.
  * Implementa la lógica de reintentos (Exponential Backoff) y devuelve
