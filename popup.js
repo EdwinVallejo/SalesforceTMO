@@ -1,9 +1,12 @@
 // =============================================================
-// POPUP.JS - CONTROL DE ACCESO SIMPLIFICADO
+// POPUP.JS - CONTROL DE ACCESO SIMPLIFICADO (SEGURO)
 // =============================================================
 
 const API_BASE = "https://salesforcetmo.onrender.com/api/v1";
 const USUARIOS_URL = `${API_BASE}/usuarios`;
+
+// API Key para autenticación con el servidor
+const API_KEY = "sfTMO-ext-2026-secure-key";
 
 // ── UTILIDADES ──────────────────────────────────────────────
 
@@ -60,11 +63,38 @@ function updateStrengthBar(password) {
 
 // ── API ─────────────────────────────────────────────────────
 
+/**
+ * Realiza peticiones a la API con API Key y JWT incluidos automáticamente.
+ */
 async function apiRequest(url, method = 'GET', body = null) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    const opts = {
+        method,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': API_KEY
+        }
+    };
+
+    // Añadir JWT si hay sesión activa
+    try {
+        const session = await chrome.storage.session.get('authToken');
+        if (session.authToken) {
+            opts.headers['Authorization'] = `Bearer ${session.authToken}`;
+        }
+    } catch (e) { /* Sin token disponible */ }
+
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch(url, opts);
     const data = await res.json().catch(() => ({ message: res.statusText }));
+
+    // Si el token expiró, limpiar sesión y forzar re-login
+    if (res.status === 403 && data?.message?.includes('Token')) {
+        chrome.storage.session.remove('authToken');
+        chrome.storage.session.remove('activeUser');
+        updateLoginView(null);
+        showAlert('alert-login', '⚠ Tu sesión expiró. Inicia sesión nuevamente.', 'error');
+    }
+
     return { status: res.status, ok: res.ok, data };
 }
 
@@ -117,12 +147,18 @@ async function handleLogin() {
         const res = await apiRequest(`${API_BASE}/usuarios/login`, 'POST', { usuario, password });
         if (res.status === 200) {
             const userData = res.data.usuario;
-            chrome.storage.session.set({ 'activeUser': userData }, () => {
+            const token = res.data.token;
+
+            // Almacenar usuario activo + JWT en sesión (no persiste al cerrar navegador)
+            chrome.storage.session.set({
+                'activeUser': userData,
+                'authToken': token
+            }, () => {
+                // Datos mínimos para el content_script (sin PIN ni datos sensibles)
                 const lastBlockUpdate = {
                     usuario_nombre: userData.nombre,
                     equipo: userData.area,
-                    usuario_correo: userData.correo,
-                    pin: userData.pin
+                    usuario_correo: userData.correo
                 };
                 chrome.storage.local.set({ 'lastBlockData': lastBlockUpdate }, () => {
                     updateLoginView(userData);
@@ -139,7 +175,8 @@ async function handleLogin() {
 }
 
 function handleLogout() {
-    chrome.storage.session.remove('activeUser', () => {
+    // Limpiar toda la data de sesión y local
+    chrome.storage.session.remove(['activeUser', 'authToken'], () => {
         chrome.storage.local.remove('lastBlockData', () => {
             updateLoginView(null);
             document.getElementById('login-username').value = '';
@@ -171,8 +208,16 @@ function updateLoginView(user) {
 }
 
 function checkSession() {
-    chrome.storage.session.get('activeUser', (res) => {
-        if (res.activeUser) updateLoginView(res.activeUser);
+    chrome.storage.session.get(['activeUser', 'authToken'], (res) => {
+        if (res.activeUser && res.authToken) {
+            updateLoginView(res.activeUser);
+        } else {
+            // Si hay usuario pero no token, limpiar sesión inconsistente
+            if (res.activeUser && !res.authToken) {
+                chrome.storage.session.remove('activeUser');
+            }
+            updateLoginView(null);
+        }
     });
 }
 
@@ -195,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('input-password').addEventListener('input', (e) => updateStrengthBar(e.target.value));
     document.getElementById('input-pin').addEventListener('input', (e) => e.target.value = e.target.value.replace(/\D/g, ''));
 
-    // Footer Status check
+    // Footer Status check (incluye API Key)
     apiRequest(`${API_BASE}/ping`).then(res => {
         const el = document.getElementById('footer-status');
         el.textContent = res.ok ? 'Conectado' : 'Servidor Inactivo';

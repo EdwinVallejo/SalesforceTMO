@@ -4,9 +4,7 @@
     "version": "2.0",
     "description": "Bloquea cuentas de Salesforce.",
     "permissions": [
-        "storage",
-        "activeTab",
-        "scripting"
+        "storage"
     ],
     "host_permissions": [
         "*://*.salesforcetmo.onrender.com/*",

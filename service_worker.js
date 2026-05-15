@@ -5,9 +5,10 @@
 // =============================================================
 
 // Define la URL base de la API de bloqueo de clientes
-// IMPORTANTE: Se ha añadido el prefijo '/api/v1' por si el backend de Render lo está usando.
-// La nueva URL de colección para POST será: https://salesforcetmo.onrender.com/api/v1/bloqueo_clientes
 const API_BASE_URL = "https://salesforcetmo.onrender.com/api/v1/bloqueo_clientes";
+
+// API Key para autenticación de la extensión con el servidor
+const API_KEY = "sfTMO-ext-2026-secure-key";
 
 // Configurar acceso a storage.session para scripts de contenido
 chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
@@ -16,6 +17,7 @@ chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONT
  * Función genérica para manejar las peticiones a la API.
  * Implementa la lógica de reintentos (Exponential Backoff) y devuelve
  * el cuerpo de la respuesta junto con el estado HTTP.
+ * Incluye API Key y JWT en todas las peticiones.
  * @param {string} url - El segmento de la URL después de la base (e.g., 'base' o un ID de cliente).
  * @param {string} method - El método HTTP (GET, POST, DELETE).
  * @param {object} data - Datos para la petición (solo para POST).
@@ -25,19 +27,36 @@ async function fetchWithRetry(url, method, data = null, retries = 3) {
     // La URL completa ahora se construye dinámicamente:
     // POST (url === 'base'): https://.../api/v1/bloqueo_clientes (SIN barra final)
     // GET/DELETE (url === 'ID'): https://.../api/v1/bloqueo_clientes/ID (SE AÑADE la barra)
-    const fullUrl = url === 'base' ? API_BASE_URL : `${API_BASE_URL}/${url}`;
+    // URLs especiales (contienen '/'): se construyen sobre la base de la API
+    let fullUrl;
+    if (url === 'base') {
+        fullUrl = API_BASE_URL;
+    } else if (url.includes('/')) {
+        // URLs como "usuarios/xxx/validar-pin" — usar base de API
+        fullUrl = `https://salesforcetmo.onrender.com/api/v1/${url}`;
+    } else {
+        fullUrl = `${API_BASE_URL}/${url}`;
+    }
 
-    // ************************************************
-    // DEBUG: Confirmar la URL exacta antes de la llamada
-    // ************************************************
     console.log(`Service Worker: Realizando ${method} a la URL: ${fullUrl}`);
 
     const options = {
         method: method,
         headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-API-Key': API_KEY
         },
     };
+
+    // Obtener JWT de la sesión y añadirlo como Authorization header
+    try {
+        const session = await chrome.storage.session.get('authToken');
+        if (session.authToken) {
+            options.headers['Authorization'] = `Bearer ${session.authToken}`;
+        }
+    } catch (e) {
+        console.log("Service Worker: Sin token JWT disponible.");
+    }
 
     if (data && method !== 'GET') {
         options.body = JSON.stringify(data);
@@ -54,8 +73,15 @@ async function fetchWithRetry(url, method, data = null, retries = 3) {
             } else {
                  responseData = await response.text();
             }
+
+            // Si el token expiró, notificar para forzar re-login
+            if (response.status === 403 && responseData?.message?.includes('Token')) {
+                chrome.storage.session.remove('authToken');
+                chrome.storage.session.remove('activeUser');
+                console.log("Service Worker: Token expirado, sesión limpiada.");
+            }
             
-            // Retorna inmediatamente si la llamada fue exitosa o si es un error 404/400/201 (manejo de errores de negocio)
+            // Retorna inmediatamente si la llamada fue exitosa o si es un error de negocio
             return {
                 status: response.status,
                 data: responseData

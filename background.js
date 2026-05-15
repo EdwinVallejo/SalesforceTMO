@@ -1,8 +1,11 @@
 // =============================================================
 // BACKGROUND.JS (Service Worker)
+// Proxy alternativo para llamadas a la API de bloqueos.
+// Incluye API Key y JWT en todas las peticiones.
 // =============================================================
 
 const BLOCKING_API_URL = "https://salesforcetmo.onrender.com/api/v1/bloqueos";
+const API_KEY = "sfTMO-ext-2026-secure-key";
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
@@ -12,13 +15,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         (async () => {
             try {
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': API_KEY
+                };
+
+                // Obtener JWT de la sesión y añadirlo como Authorization header
+                try {
+                    const session = await chrome.storage.session.get('authToken');
+                    if (session.authToken) {
+                        headers['Authorization'] = `Bearer ${session.authToken}`;
+                    }
+                } catch (e) { /* Sin token disponible */ }
+
                 const response = await fetch(fullUrl, {
                     method: request.method,
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: headers,
                     body: request.data ? JSON.stringify(request.data) : null,
                 });
     
                 const responseData = await response.json().catch(() => ({ message: response.statusText }));
+
+                // Si el token expiró, limpiar sesión
+                if (response.status === 403 && responseData?.message?.includes('Token')) {
+                    chrome.storage.session.remove('authToken');
+                    chrome.storage.session.remove('activeUser');
+                }
                 
                 sendResponse({
                     status: response.status,

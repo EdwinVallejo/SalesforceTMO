@@ -1,5 +1,5 @@
 // =============================================================
-// CONTENT_SCRIPT.JS - SISTEMA DE BLOQUEO AVANZADO
+// CONTENT_SCRIPT.JS - SISTEMA DE BLOQUEO AVANZADO (SEGURO)
 // =============================================================
 
 const UI_CONTAINER_ID = 'blocking-ext-ui-container';
@@ -8,7 +8,8 @@ const LAST_BLOCK_DATA_KEY = 'lastBlockData';
 const UI_FONT_FAMILY = "'Salesforce Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 const TEMP_ACCESS_DURATION_MS = 10000; // 10 segundos parametrizables
 
-let USER_DATA = { usuario_nombre: "", equipo: "", usuario_correo: "", pin: "" };
+// USER_DATA ya NO contiene el PIN — toda validación es server-side
+let USER_DATA = { usuario_nombre: "", equipo: "", usuario_correo: "" };
 let DEFAULT_BLOCK_DAYS = 20;
 let tempAccessTimer = null;
 
@@ -112,7 +113,7 @@ async function loadSavedData() {
                     USER_DATA.usuario_correo = res.activeUser.correo;
                     USER_DATA.usuario_nombre = res.activeUser.nombre;
                     USER_DATA.equipo = res.activeUser.area;
-                    USER_DATA.pin = res.activeUser.pin;
+                    // PIN ya NO se almacena en el cliente
                 } else {
                     console.log("Blocking Ext: No hay sesión activa.");
                     USER_DATA.usuario_correo = ""; // Limpiar identidad si no hay sesión
@@ -123,8 +124,9 @@ async function loadSavedData() {
     });
 }
 
-function saveLastBlockData(usuario_nombre, equipo, blockDays, usuario_correo, pin) {
-    chrome.storage.local.set({ [LAST_BLOCK_DATA_KEY]: { usuario_nombre, equipo, blockDays, usuario_correo, pin } });
+function saveLastBlockData(usuario_nombre, equipo, blockDays, usuario_correo) {
+    // No almacenar PIN — solo datos no sensibles
+    chrome.storage.local.set({ [LAST_BLOCK_DATA_KEY]: { usuario_nombre, equipo, blockDays, usuario_correo } });
 }
 
 // --- 3. UI y Overlay ---
@@ -176,7 +178,8 @@ function renderUI(clienteId, bloqueo) {
             actionButton.textContent = '🔓 Liberar Cuenta';
             actionButton.style.background = '#c93838';
             actionButton.style.color = 'white';
-            actionButton.onclick = () => handleUnlock(clienteId, bloqueo.pin);
+            // Ya NO se pasa el PIN — la validación es server-side
+            actionButton.onclick = () => handleUnlock(clienteId);
             panel.appendChild(actionButton);
         }
 
@@ -232,17 +235,48 @@ function showBlockOverlay(clienteId, bloqueo) {
                     <button id="ov-btn" style="padding:8px 15px; background:#0176d3; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:700;">Entrar (10s)</button>
                 </div>
                 <p id="ov-err" style="color:#c23934; font-size:10px; margin-top:5px; display:none;">PIN Incorrecto</p>
+                <p id="ov-loading" style="color:#0176d3; font-size:10px; margin-top:5px; display:none;">⏳ Validando...</p>
             </div>
         </div>
     `;
     document.body.appendChild(overlay);
 
-    overlay.querySelector('#ov-btn').onclick = () => {
+    // Validar PIN contra el servidor (NUNCA en el cliente)
+    overlay.querySelector('#ov-btn').onclick = async () => {
         const pin = overlay.querySelector('#ov-pin').value;
-        if (pin === bloqueo.pin) handleTempAccess(clienteId, bloqueo);
-        else {
-            overlay.querySelector('#ov-err').style.display = 'block';
-            setTimeout(() => overlay.querySelector('#ov-err').style.display = 'none', 2000);
+        if (!pin) return;
+
+        const btn = overlay.querySelector('#ov-btn');
+        const errEl = overlay.querySelector('#ov-err');
+        const loadEl = overlay.querySelector('#ov-loading');
+
+        btn.disabled = true;
+        errEl.style.display = 'none';
+        loadEl.style.display = 'block';
+
+        try {
+            // Validar PIN server-side via service worker
+            const res = await sendMessageToServiceWorker(
+                `usuarios/${encodeURIComponent(bloqueo.usuario_nombre)}/validar-pin`,
+                'POST',
+                { pin }
+            );
+
+            if (res && res.status === 200) {
+                loadEl.style.display = 'none';
+                handleTempAccess(clienteId, bloqueo);
+            } else {
+                loadEl.style.display = 'none';
+                errEl.textContent = res?.data?.message || 'PIN Incorrecto';
+                errEl.style.display = 'block';
+                setTimeout(() => errEl.style.display = 'none', 3000);
+            }
+        } catch (e) {
+            loadEl.style.display = 'none';
+            errEl.textContent = 'Error de conexión';
+            errEl.style.display = 'block';
+        } finally {
+            btn.disabled = false;
         }
     };
 }
@@ -279,31 +313,60 @@ async function handleLockDirect(id, days) {
     const exp = ts + (days * 24 * 60 * 60 * 1000);
     const payload = {
         cliente_id: id, usuario_nombre: USER_DATA.usuario_nombre, equipo: USER_DATA.equipo,
-        usuario_correo: USER_DATA.usuario_correo, pin: USER_DATA.pin,
+        usuario_correo: USER_DATA.usuario_correo,
+        // PIN ya no se envía desde el cliente — el servidor lo maneja vía el usuario autenticado
         timestamp_bloqueo: ts, tiempo_expiracion: exp, duracion_minutos: days * 1440
     };
 
     try {
         const res = await sendMessageToServiceWorker('base', 'POST', payload);
         if (res.status === 201) { renderUI(id, res.data.bloqueo); hideBlockOverlay(); }
+        else if (res.status === 401 || res.status === 403) {
+            alert("🚨 Sesión expirada. Inicia sesión nuevamente en la extensión.");
+        }
         else renderError("Error al bloquear.");
     } catch (e) { renderError("Error de conexión."); }
 }
 
-async function handleUnlock(id, correctPin) {
+async function handleUnlock(id) {
+    // Pedir PIN al usuario (la validación real es server-side)
     const inputPin = prompt("Ingresa el PIN de desbloqueo para liberar esta cuenta:");
 
     if (inputPin === null) return; // Cancelado
-    if (inputPin !== correctPin) {
-        alert("🚨 PIN incorrecto. No tienes permiso para liberar esta cuenta.");
+    if (!inputPin.trim()) {
+        alert("🚨 Debes ingresar un PIN.");
         return;
     }
 
     renderLoading("Liberando...");
     try {
-        const res = await sendMessageToServiceWorker(id, 'DELETE');
-        if (res.status === 204 || res.status === 404) { renderUI(id, null); hideBlockOverlay(); }
-        else renderError("Error al liberar.");
+        // Obtener el usuario actual de la sesión
+        const session = await new Promise(resolve => {
+            chrome.storage.session.get('activeUser', resolve);
+        });
+        const currentUser = session?.activeUser?.usuario;
+
+        if (!currentUser) {
+            alert("🚨 Sesión expirada. Inicia sesión nuevamente.");
+            return;
+        }
+
+        // Enviar DELETE con usuario y PIN para validación server-side
+        const res = await sendMessageToServiceWorker(id, 'DELETE', {
+            usuario: currentUser,
+            pin: inputPin.trim()
+        });
+
+        if (res.status === 204 || res.status === 404) {
+            renderUI(id, null);
+            hideBlockOverlay();
+        } else if (res.status === 401) {
+            alert("🚨 PIN incorrecto. No tienes permiso para liberar esta cuenta.");
+        } else if (res.status === 403) {
+            alert("🚨 Sesión expirada. Inicia sesión nuevamente.");
+        } else {
+            renderError(res?.data?.message || "Error al liberar.");
+        }
     } catch (e) { renderError("Error de conexión."); }
 }
 
