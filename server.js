@@ -140,14 +140,14 @@ app.get('/api/v1/ping', (req, res) => {
 
 // =============================================================
 // ENDPOINTS DE BLOQUEOS (/api/v1/bloqueos)
-// Todos protegidos con JWT
+// GET es público (lectura), POST/DELETE requieren JWT
 // =============================================================
 
 /**
  * [GET] /api/v1/bloqueos/:clienteId
  * Verifica el estado del bloqueo y aplica la lógica de expiración.
  */
-app.get('/api/v1/bloqueos/:clienteId', authenticateToken, async (req, res) => {
+app.get('/api/v1/bloqueos/:clienteId', async (req, res) => {
     const clienteId = sanitizeInput(req.params.clienteId);
 
     try {
@@ -174,7 +174,7 @@ app.get('/api/v1/bloqueos/:clienteId', authenticateToken, async (req, res) => {
 });
 
 // Alias para compatibilidad con la extensión (GET)
-app.get('/api/v1/bloqueo_clientes/:clienteId', authenticateToken, async (req, res, next) => {
+app.get('/api/v1/bloqueo_clientes/:clienteId', async (req, res, next) => {
     req.url = `/api/v1/bloqueos/${req.params.clienteId}`;
     app.handle(req, res, next);
 });
