@@ -9,7 +9,6 @@ const rateLimit = require('express-rate-limit');
 // --- Constantes de Seguridad ---
 
 const JWT_SECRET = process.env.JWT_SECRET || 'CHANGE_ME_IN_PRODUCTION';
-const JWT_EXPIRATION = '8h'; // Token expira en 8 horas (jornada laboral)
 const BCRYPT_SALT_ROUNDS = 10;
 const API_KEY = process.env.API_KEY || 'sfTMO-ext-2026-secure-key';
 
@@ -408,14 +407,14 @@ app.post('/api/v1/usuarios/login', authLimiter, async (req, res) => {
             return res.status(401).json({ message: "Contraseña incorrecta." });
         }
 
-        // Generar token JWT con datos del usuario
+        // Generar token JWT con datos del usuario sin expiración
         const tokenPayload = {
             usuario: user.usuario,
             correo: user.correo,
             nombre: user.nombre,
             area: user.area
         };
-        const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
+        const token = jwt.sign(tokenPayload, JWT_SECRET);
 
         // Retornar datos del usuario (sin password ni pin) + token
         const { password: _pw, pin: _pin, ...userData } = user;

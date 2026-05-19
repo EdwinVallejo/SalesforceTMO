@@ -33,7 +33,7 @@ La versión 2.0 introduce mejoras de seguridad de grado empresarial. Se aplican 
 
 ### 3.1 Seguridad en Tránsito y Red
 - **API Key Estática (`X-API-Key`):** Todas las solicitudes entre la extensión y el backend requieren un secreto compartido (`sfTMO-ext-2026-secure-key`).
-- **Autenticación Basada en Tokens (JWT):** El acceso a endpoints protegidos (crear bloqueo, eliminar bloqueo) requiere un `Bearer Token` firmado digitalmente. Los tokens tienen una expiración configurada (8 horas, equivalente a una jornada laboral estándar).
+- **Autenticación Basada en Tokens (JWT):** El acceso a endpoints protegidos (crear bloqueo, eliminar bloqueo) requiere un `Bearer Token` firmado digitalmente. El token no tiene una expiración de tiempo en el servidor; la duración de la sesión está ligada al ciclo de vida del navegador del usuario (se elimina al cerrar el navegador).
 - **CORS Estricto:** El servidor restringe el origen de las peticiones exclusivamente a extensiones de Chrome (`chrome-extension://*`) y a entornos de desarrollo locales explícitos.
 - **Helmet:** Implementación de cabeceras de seguridad HTTP (HSTS, X-Frame-Options, Prevención de Sniffing MIME).
 
