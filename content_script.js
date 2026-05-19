@@ -399,20 +399,11 @@ async function init() {
 
     if (id !== currentId) {
         currentId = id;
-        
-        // 🚨 CRÍTICO: Ocultar el overlay inmediatamente al detectar el cambio de URL.
-        // Esto evita el efecto "pegado" mientras se espera la respuesta del servidor.
-        hideBlockOverlay(); 
-        
         getOrCreateContainer().style.display = 'block';
-        
-        // Limpiamos visualmente el panel al instante
-        renderLoading("Cargando...");
-        
         await loadSavedData();
+        renderLoading("Cargando...");
         try {
             const res = await sendMessageToServiceWorker(id, 'GET');
-            // Validamos que seguimos en la misma cuenta después de la respuesta asíncrona
             if (id === getClientIdFromUrl()) {
                 const b = (res.status === 200) ? res.data : null;
                 renderUI(id, b);
@@ -436,20 +427,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 init();
 let lastUrl = location.href;
-
-// OPTIMIZACIÓN: Reemplazamos el MutationObserver (que evalúa miles de cambios DOM en Salesforce y causa lag)
-// por un chequeo ligero y eventos nativos para una respuesta rápida y sin congelamientos.
-const checkUrlChange = () => {
-    if (location.href !== lastUrl) {
-        lastUrl = location.href;
-        init();
-    }
-};
-
-// 1. Escuchar navegación nativa del navegador (botones atrás/adelante)
-window.addEventListener('popstate', checkUrlChange);
-window.addEventListener('hashchange', checkUrlChange);
-
-// 2. Polling ultraligero (evalúa cada 50ms) para atrapar pushState de la Single Page Application (SPA)
-// 50ms es imperceptible para el ojo humano y como solo compara strings, su costo de CPU es nulo.
-setInterval(checkUrlChange, 50);
+new MutationObserver(() => {
+    if (location.href !== lastUrl) { lastUrl = location.href; init(); }
+}).observe(document, { subtree: true, childList: true });
