@@ -427,6 +427,19 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 init();
 let lastUrl = location.href;
-new MutationObserver(() => {
-    if (location.href !== lastUrl) { lastUrl = location.href; init(); }
-}).observe(document, { subtree: true, childList: true });
+
+// OPTIMIZACIÓN: Reemplazamos el MutationObserver (que evalúa miles de cambios DOM en Salesforce y causa lag)
+// por un chequeo ligero y eventos nativos para una respuesta rápida y sin congelamientos.
+const checkUrlChange = () => {
+    if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        init();
+    }
+};
+
+// 1. Escuchar navegación nativa del navegador (botones atrás/adelante)
+window.addEventListener('popstate', checkUrlChange);
+window.addEventListener('hashchange', checkUrlChange);
+
+// 2. Polling ultraligero (evalúa cada 250ms) para atrapar pushState de la Single Page Application (SPA)
+setInterval(checkUrlChange, 250);
