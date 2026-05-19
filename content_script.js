@@ -161,7 +161,11 @@ function renderUI(clienteId, bloqueo) {
 
     panel = document.createElement('div');
     panel.id = `${UI_CONTAINER_ID}-panel`;
-    panel.style.cssText = 'width:300px; background:white; border-radius:8px; boxShadow:0 4px 12px rgba(0,0,0,0.2); padding:15px; position:fixed; top:35px; left:0; transition:left 0.3s ease;';
+    panel.style.cssText = 'width:300px; background:white; border-radius:8px; boxShadow:0 4px 12px rgba(0,0,0,0.2); padding:15px; position:fixed; top:35px; left:-320px; transition:left 0.3s ease;';
+
+    // Asegurar que el icono vuelva a su estado inicial si se cerró por el render
+    const anchor = document.getElementById(`${UI_CONTAINER_ID}-anchor`);
+    if (anchor) anchor.textContent = '🔒';
 
     const actionButton = document.createElement('button');
     actionButton.style.cssText = 'padding:10px; border-radius:5px; width:100%; cursor:pointer; border:none; font-weight:bold;';
