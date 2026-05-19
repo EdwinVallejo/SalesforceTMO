@@ -399,11 +399,20 @@ async function init() {
 
     if (id !== currentId) {
         currentId = id;
+        
+        // 🚨 CRÍTICO: Ocultar el overlay inmediatamente al detectar el cambio de URL.
+        // Esto evita el efecto "pegado" mientras se espera la respuesta del servidor.
+        hideBlockOverlay(); 
+        
         getOrCreateContainer().style.display = 'block';
-        await loadSavedData();
+        
+        // Limpiamos visualmente el panel al instante
         renderLoading("Cargando...");
+        
+        await loadSavedData();
         try {
             const res = await sendMessageToServiceWorker(id, 'GET');
+            // Validamos que seguimos en la misma cuenta después de la respuesta asíncrona
             if (id === getClientIdFromUrl()) {
                 const b = (res.status === 200) ? res.data : null;
                 renderUI(id, b);
@@ -441,5 +450,6 @@ const checkUrlChange = () => {
 window.addEventListener('popstate', checkUrlChange);
 window.addEventListener('hashchange', checkUrlChange);
 
-// 2. Polling ultraligero (evalúa cada 250ms) para atrapar pushState de la Single Page Application (SPA)
-setInterval(checkUrlChange, 250);
+// 2. Polling ultraligero (evalúa cada 50ms) para atrapar pushState de la Single Page Application (SPA)
+// 50ms es imperceptible para el ojo humano y como solo compara strings, su costo de CPU es nulo.
+setInterval(checkUrlChange, 50);
