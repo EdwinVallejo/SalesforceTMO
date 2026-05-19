@@ -388,6 +388,9 @@ function renderError(msg) {
 
 let currentId = null;
 async function init() {
+    // Prevenir errores de 'appendChild' si la extensión se inyecta en 'document_start' antes de que exista el DOM
+    if (!document.body || !document.head) return;
+
     const id = getClientIdFromUrl();
     if (!id) {
         currentId = null;
@@ -426,6 +429,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 init();
+// Si se carga la página desde cero, el body aún no existe, por lo que esperamos a que el DOM esté listo
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', init);
+}
 let lastUrl = location.href;
 new MutationObserver(() => {
     if (location.href !== lastUrl) { lastUrl = location.href; init(); }
