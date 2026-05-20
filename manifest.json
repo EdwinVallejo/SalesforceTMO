@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "name": "Account Blocking To Salesforce",
+    "name": "Account Locker To Salesforce",
     "version": "2.0",
-    "description": "Bloquea cuentas de Salesforce.",
+    "description": "Generar bloqueo de cuentas en Salesforce desde una extensión de Chrome.",
     "permissions": [
         "storage"
     ],

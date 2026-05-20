@@ -6,7 +6,7 @@ const UI_CONTAINER_ID = 'blocking-ext-ui-container';
 const API_ACTION = "API_FETCH";
 const LAST_BLOCK_DATA_KEY = 'lastBlockData';
 const UI_FONT_FAMILY = "'Salesforce Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-const TEMP_ACCESS_DURATION_MS = 10000; // 10 segundos parametrizables
+const TEMP_ACCESS_DURATION_MS = 14400000; // 4 horas parametrizables
 
 // USER_DATA ya NO contiene el PIN — toda validación es server-side
 let USER_DATA = { usuario_nombre: "", equipo: "", usuario_correo: "" };
@@ -297,7 +297,7 @@ function handleTempAccess(id, b) {
     const nt = document.createElement('div');
     nt.id = 'blocking-ext-temp-notify';
     nt.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#2e844a; color:white; padding:10px 20px; border-radius:8px; z-index:100001; font-weight:700;';
-    nt.textContent = '⏱️ Acceso activo (10s)';
+    nt.textContent = '⏱️ Acceso activo (4Hrs)';
     document.body.appendChild(nt);
 
     tempAccessTimer = setTimeout(() => {
